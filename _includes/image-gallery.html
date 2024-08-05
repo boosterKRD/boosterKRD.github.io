@@ -1,0 +1,11 @@
+<div class="gallery">
+  {% for image in site.static_files %}
+    {% if image.path contains include.folder and image.name != 'thumbnail.jpg' %}
+      <div class="gallery-item">
+        <a href="{{ image.path | relative_url }}" target="_blank">
+          <img src="{{ image.path | relative_url }}" alt="">
+        </a>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
