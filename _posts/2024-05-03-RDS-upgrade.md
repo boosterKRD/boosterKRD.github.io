@@ -17,7 +17,6 @@ This approach ensures minimal downtime, typically around 10-20 seconds, regardle
 ## **1. Prepare the BLUE Database**
 ### Creating a Role on the BLUE
   ```sql
-  SET ROLE {cluster_superuser};
   CREATE USER pgrepuser WITH password 'pgrepuser_PASSWORD';
   GRANT rds_replication TO pgrepuser;
   GRANT SELECT ON ALL TABLES IN SCHEMA public TO pgrepuser;
@@ -27,14 +26,12 @@ This approach ensures minimal downtime, typically around 10-20 seconds, regardle
 
 ### Creating a Publication on the BLUE
   ```sql
-  SET ROLE {cluster_superuser};
   CREATE PUBLICATION {cluster_publication_name} FOR ALL TABLES;
   ```  
   This command creates a publication on the BLUE database that includes all tables. This publication will be used to replicate data to the Green database during the logical replication process.
 
 ### Creating a Logical Replication Slot on the BLUE
   ```sql
-  SET ROLE {cluster_superuser};
   SELECT pg_create_logical_replication_slot('{cluster_repl_slot}', 'pgoutput');
   ```  
   
@@ -82,7 +79,6 @@ The fellowinf procces set up a new (Green) instance.
 
 ## **5. Prepare the Green Database**
   ```sql
-  SET ROLE {cluster_superuser};
   DO $$ 
   DECLARE 
   user_name text;
@@ -97,7 +93,6 @@ The fellowinf procces set up a new (Green) instance.
 
 ### Creating a Subscription on the GREEN
   ```sql
-  SET ROLE {cluster_superuser};
   CREATE SUBSCRIPTION {cluster_subscription_name} CONNECTION 'host={blue_instance_identifier}.XXX.{cluster_region}.rds.amazonaws.com port={cluster_port} dbname={cluster_datname} user=pgrepuser password=Olimpusc770!' PUBLICATION {cluster_publication_name}
   WITH (copy_data = false, create_slot = false, enabled = false, connect = true, slot_name = '{cluster_repl_slot}');
   ```
@@ -173,7 +168,6 @@ How you choose to compare the objects between the two databases is up to you, bu
 I performed such updates in 2023 and 2024 with PostgreSQL versions 14 and 15, and on AWS at thosetime, the subscription needs to be shifted by LSN + 1 byte. So, make sure to add 1 byte to the {green_last_lsn} value you copied from the logs and use the new value below.
   ```sql
   --This command retrieves the external_id associated with a specific subscription on the GREEN database. The external_id is necessary for advancing the replication origin to a specific LSN.
-  SET ROLE {cluster_superuser}; 
   SELECT 'pg_'||oid::text AS external_id FROM pg_subscription WHERE subname = '{cluster_subscription_name}';
 
   --Advancing the Subscription on the Target (GREEN) Database
@@ -219,8 +213,8 @@ This block first sets specific users to NOLOGIN status on the BLUE database, pre
   END $$;
   ```
 
-### 3. Disable and Drop Subscription on the BLUE Database:
-This command disables and drops the subscription on the BLUE database, which is necessary to reconfigure replication from GREEN.
+### 3. Disable and Drop Subscription on the GREEN Database:
+This command disables and drops the subscription on the GREEN database.
   ```sql
   --Disable and Drop Subscription
   ALTER SUBSCRIPTION my_subscription DISABLE;
@@ -263,24 +257,126 @@ This command exports the current sequence values from the BLUE and applies them 
   psql -h green_host -U username -d green_db -f sync_sequences.sql
   ```
 
+## 11. Final Query Checks
+Before finalizing the cutover to the Green database, it's crucial to ensure that all configurations and subscriptions are correctly set up and operational. Run the following queries to perform these final checks:
+### 1. Check if the pgrepuser Role Exists in the GREEN Database
+  ```sql
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_roles r, pg_auth_members m, pg_roles r2
+    WHERE r.oid = m.member AND r2.oid = m.roleid AND r.rolname = 'pgrepuser' AND r2.rolname = 'rds_replication'
+  ) AS "exists";
+  ```
+### 2. Verify the Publication in the GREEN Database
+This query checks whether the publication with the specified name and attributes exists in the Green database (for rollback).
+  ```sql
+  SELECT EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = '{cluster_publication_name}' AND puballtables AND pubinsert AND pubupdate AND pubdelete AND pubtruncate
+  ) AS "exists";
+  ```
+### 3. Ensure wal_level is Set to Logical in the GREEN Database 
+  ```sql
+  SELECT EXISTS (
+    SELECT 1 FROM pg_settings WHERE name = 'wal_level' AND setting='logical'
+  ) AS "exists";
+  ```
+### 4. Check for the Existence of the Subscription in the BLUE Database
+This query verifies the presence of the subscription in the Blue database, which is necessary for ensuring replication between Blue and Green instances (for rollback).
+  ```sql
+  SELECT EXISTS (
+    SELECT * FROM pg_subscription WHERE subname = '{cluster_subscription_name}'
+  ) AS "exists";
+  ``` 
+ℹ️  INFO: Ensure that all queries return the expected results before moving on to the final steps of the cutover process.
+
+## 12. Accept Connections on the GREEN Database
+After verifying that the Green database is fully operational and all checks have passed, the next step is to allow user connections to the Green database and redirect traffic from the Blue instance.
+### 1. Set User Login Permissions
+Enable login permissions for users who were previously set to NOLOGIN during the upgrade process.
+  ```sql
+  DO $$ 
+  DECLARE 
+  user_name text;
+  BEGIN 
+  FOR user_name IN (SELECT rolname FROM pg_roles WHERE rolname NOT LIKE 'rds%' AND rolname IN ('user1', 'user2'))  
+  LOOP
+      EXECUTE 'ALTER USER ' || user_name || ' WITH LOGIN;'; 
+  END LOOP; 
+  END $$;
+  ```
+### 2. Redirect Application Traffic to the GREEN Database
+Update your application's database connection strings to point to the Green database. This step involves changing the DNS or configuration settings in your application to ensure that all new connections are directed to the Green instance.
 
 
+----
+<br>
+<div style="border-left: 5px solid red; padding: 10px; background-color: #fff3cd; color: #856404;">
+  🚨<span style="font-size:1.2em;">IMPORTANT:</span> To ensure a successful ROLLBACK to the BLUE instance, it is recommended to refrain from executing DDL commands after the cutover and to verify that the application is functioning correctly with the new PostgreSQL version.
 
-12. Final Query Checks
-Action: --check_queries_final
-Run final queries to ensure that the Green database is fully operational and that all systems are go.
-13. Accept Connections on Green
-Action: --accept_connection_on_green
-After verifying that the Green database is ready, start accepting connections to it and direct traffic away from the Blue database.
-14. Fast Rollback (Blue)
-Action: --fast_rollback_blue
-If any issues are encountered, perform a fast rollback to the Blue database environment.
-15. Full Rollback (Blue)
-Action: --full_rollback_blue
-If the fast rollback fails or further issues are identified, perform a full rollback to the Blue database to ensure stability.
-16. Testing
-Action: --test
-Finally, test the entire process to ensure that everything works as expected before applying it in a live environment.
-By following these steps manually, you can effectively update your RDS PostgreSQL instance with minimal downtime. Automating this process with Python or another scripting tool can help streamline and reduce the potential for human error.
+  If the application is working well on the new version, you should:
+  <ul>
+    <li>Delete the replication slot on GREEN</li>
+    <li>Delete the BLUE instance</li>
+  </ul>
+  However, if you need to roll back to the previous version without losing data, please follow  <a href="#rollback-cutover-from-green-to-blue-database">the ROLLBACK instructions below</a>.
+</div>
 
-You can now insert the specific SQL and AWS CLI commands for each action as needed.
+## **ROLLBACK. Cutover from GREEN to BLUE Database**
+For a ROLLBACK, you can essentially repeat the steps from Step 10 but in reverse, performing a cutover from the GREEN to the BLUE database. This process includes checking replication lag, disabling user access, terminating active connections, reconfiguring the replication setup, and synchronizing sequences.
+
+### 1. Checking Replication Lag on the BLUE Database
+This query checks the replication lag on the BLUE database to ensure that all changes have been replicated from GREEN to BLUE before proceeding with the cutover.
+  ```sql
+  SELECT slot_name, (pg_current_wal_lsn() - confirmed_flush_lsn) AS lsn_distance FROM pg_replication_slots;
+  ```
+
+### 2. Set User Login to NOLOGIN and Terminate User Connections on the GREEN Database
+This block first sets specific users to NOLOGIN status on the GREEN database, preventing them from accessing the database. It then forcibly terminates any active connections for these users to prevent a "split-brain" scenario during the cutover.
+  ```sql
+  DO $$ 
+  DECLARE 
+  user_name text;
+  BEGIN 
+  FOR user_name IN (SELECT rolname FROM pg_roles WHERE rolname NOT LIKE 'rds%' AND rolname IN ('user1', 'user2'))
+  LOOP
+      -- Set user login to NOLOGIN
+      EXECUTE 'ALTER USER ' || user_name || ' WITH NOLOGIN;';
+      
+      -- Terminate active user connections
+      EXECUTE 'SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.usename = ''' || user_name || ''';';
+  END LOOP; 
+  END $$;
+  ```
+
+### 3. Disable and Drop Subscription on the BLUE Database:
+This command disables and drops the subscription on the BLUE database.
+  ```sql
+  --Disable and Drop Subscription
+  ALTER SUBSCRIPTION my_subscription DISABLE;
+  ALTER SUBSCRIPTION my_subscription SET (slot_name = NONE);
+  DROP SUBSCRIPTION my_subscription;
+  ```
+
+### 4. Syncing Sequences Manually
+The logical replication protocol does not synchronize sequences, so you need to handle this synchronization manually. I automated this in an update script, and here is an example of the commands (you should test them as I haven't used them myself).
+This command exports the current sequence values from the BLUE and applies them to the GREEN database, ensuring that sequences are synchronized across both databases.
+  ```bash
+  psql -h green_host -U username -d blue_db -t -A -F ',' -c "SELECT 'SELECT setval(' || quote_literal(sequence_schema || '.' || sequence_name) || ', ' || last_value || ', true);' FROM information_schema.sequences JOIN pg_sequences ON information_schema.sequences.sequence_name = pg_sequences.schemaname" > sync_sequences.sql
+
+  psql -h blue_host -U username -d green_db -f sync_sequences.sql
+  ```
+
+### 5. Set User Login Permissions on BLUE Database
+  ```sql
+  DO $$ 
+  DECLARE 
+  user_name text;
+  BEGIN 
+  FOR user_name IN (SELECT rolname FROM pg_roles WHERE rolname NOT LIKE 'rds%' AND rolname IN ('user1', 'user2'))  
+  LOOP
+      EXECUTE 'ALTER USER ' || user_name || ' WITH LOGIN;'; 
+  END LOOP; 
+  END $$;
+  ```
+### 2. Redirect Application Traffic to the BLUE Database
+Update your application's database connection strings to point to the BLUE database. This step involves changing the DNS or configuration settings in your application to ensure that all new connections are directed to the Green instance.
