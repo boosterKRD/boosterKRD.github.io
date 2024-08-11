@@ -5,26 +5,22 @@ date: 2024-05-03
 ---
 When working with RDS PostgreSQL, minimizing downtime during updates is crucial for maintaining availability. This guide describes a manual process to update your database with minimal downtime. However, the process involves a bunch of commands, and if you do everything manually, you're likely to make mistakes in production. To avoid this, consider automating these steps using Python or other scripting tools to streamline the process and reduce the risk of errors.
 
-In a nutshell, the strategy behind this update process is:
-- to clone a replica from a snapshot 
-- catch up on changes from the primary instance using logical replication. 
 This approach ensures minimal downtime, typically around 10-20 seconds, regardless of the database size.
 
-## Table of Contents
-
-1. [Prepare the BLUE Database](#1-prepare-the-blue-database)
-2. [Create a Database Snapshot](#2-create-a-database-snapshot)
-3. [Modify the Database Snapshot](#3-modify-the-database-snapshot)
-4. [Restore the Database Snapshot](#4-restore-the-database-snapshot)
-5. [Prepare the GREEN](#5-prepare-the-green)
-6. [Check Queries](#6-check-queries)
-7. [Compare Database Objects](#7-compare-database-objects)
-8. [Advance and Start a Subscription in the GREEN](#8-advance-and-start-a-subscription-in-the-green)
-9. [Maintain the GREEN](#9-maintain-the-green)
-10. [Cutover to the GREEN](#10-cutover-to-the-green)
-11. [Final Query Checks](#11-final-query-checks)
-12. [Accept Connections on the GREEN](#12-accept-connections-on-the-green)
-13. [ROLLBACK. Cutover from GREEN to BLUE](#rollback-cutover-from-green-to-blue)
+In a nutshell, the strategy behind this update process is:
+  1. [Prepare the BLUE Database](#1-prepare-the-blue-database)
+  2. [Create a Database Snapshot](#2-create-a-database-snapshot)
+  3. [Modify the Database Snapshot](#3-modify-the-database-snapshot)
+  4. [Restore the Database Snapshot](#4-restore-the-database-snapshot)
+  5. [Prepare the GREEN](#5-prepare-the-green)
+  6. [Check Queries](#6-check-queries)
+  7. [Compare Database Objects](#7-compare-database-objects)
+  8. [Advance and Start a Subscription in the GREEN](#8-advance-and-start-a-subscription-in-the-green)
+  9. [Maintain the GREEN](#9-maintain-the-green)
+  10. [Cutover to the GREEN](#10-cutover-to-the-green)
+  11. [Final Query Checks](#11-final-query-checks)
+  12. [Accept Connections on the GREEN](#12-accept-connections-on-the-green)
+  13. [ROLLBACK. Cutover from GREEN to BLUE](#rollback-cutover-from-green-to-blue)
 
 <!--MORE-->
 
