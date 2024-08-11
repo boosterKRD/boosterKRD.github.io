@@ -309,7 +309,7 @@ Enable login permissions for users who were previously set to NOLOGIN during the
 Update your application's database connection strings to point to the GREEN database. This step involves changing the DNS or configuration settings in your application to ensure that all new connections are directed to the GREEN instance.
 
 
-----
+-----
 <br>
 <div style="border-left: 5px solid red; padding: 10px; background-color: #fff3cd; color: #856404;">
   🚨<span style="font-size:1.2em;">IMPORTANT:</span> To ensure a successful ROLLBACK to the BLUE instance, it is recommended to refrain from executing DDL commands after the cutover and to verify that the application is functioning correctly with the new PostgreSQL version.
