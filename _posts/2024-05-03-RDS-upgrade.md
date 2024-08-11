@@ -323,7 +323,7 @@ Update your application's database connection strings to point to the GREEN data
 </div>
 
 <br>
-----
+-----
 
 ## **ROLLBACK. Cutover from GREEN to BLUE**
 For a ROLLBACK, you can essentially repeat the steps from Step 10 but in reverse, performing a cutover from the GREEN to the BLUE database. This process includes checking replication lag, disabling user access, terminating active connections, reconfiguring the replication setup, and synchronizing sequences.
