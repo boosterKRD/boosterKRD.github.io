@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Index in PostgrSQL
+title: Index2 in PostgrSQL
 date: 2024-08-25
 ---
 # Table of Contents
