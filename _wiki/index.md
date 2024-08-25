@@ -1,31 +1,60 @@
+---
+layout: post
+title: Intentional Data Corruption for Backup Testing
+date: 2023-08-18
+---
 # Table of Contents
-
+0. [Time when stats was reset ](#0-time-when-stats-was-reset)
 1. [Indexes info with definition](#1-indexes-info-with-definition)
    - [Output](#output-1)
 2. [Identifying unused indexes](#2-identifying-unused-indexes)
 3. [Duplicate indexes](#3-duplicate-indexes)
    - [Additional SQL queries for analyzing](#additional-sql-queries-for-analyzing)
    - [Output](#output-3)
+<!--MORE-->
 
-## 1. INDEXES INFO WITH DEFINITION
+-----
+## 0. TIME WHEN STATS WAS RESET
 ```sql
-    SELECT
-        idx.tablename,
-        idx.indexname,
-        idx.indexdef,
-        pg_size_pretty(pg_relation_size(idx.indexrelid)) AS index_size,
+    select
+        sd.stats_reset::timestamptz(0),
+        ((extract(epoch from now()) - extract(epoch from sd.stats_reset))/86400)::int as days
+    from pg_stat_database sd
+    where datname = current_database();
+```
+
+## 1. INDEXES INFO
+Table & index sizes along which indexes are being scanned and how many tuples are fetched. 
+[About idx_tup_fetch and idx_tup_read](https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp)
+
+```sql
+    SELECT 
+        n.nspname || '.' || c.relname AS table_name, 
+        c.reltuples::bigint AS num_rows,
+        COALESCE(pstu.seq_scan, 0) AS seq_scan_count, 
+        --pstu.last_seq_scan AS last_seq_scan_, --since PG 16
+        pg_size_pretty(pg_relation_size(c.oid)) AS table_size, 
+        i.indexrelid::regclass AS index_name,
+        pg_size_pretty(pg_relation_size(i.indexrelid)) AS index_size,
+        CASE WHEN i.indisprimary THEN 'Y' ELSE 'N' END AS "primary",
+        CASE WHEN i.indisunique THEN 'Y' ELSE 'N' END AS "unique",
         COALESCE(psui.idx_scan, 0) AS number_of_scans,
         COALESCE(psui.idx_tup_fetch, 0) AS rows_fetched,
-        COALESCE(psui.idx_tup_read, 0) AS rows_returned
-    FROM
-        pg_indexes idx
-    LEFT JOIN
-        pg_stat_user_indexes psui ON idx.indexrelid = psui.indexrelid
-    WHERE
-        idx.schemaname = 'public' -- and idx.tablename = 'accounts'
-    ORDER BY 
-        idx.tablename,
-        idx.indexname;
+        COALESCE(psui.idx_tup_read, 0) AS rows_returned,
+        CASE WHEN COALESCE(psui.idx_tup_read, 0) > 0 THEN
+            ROUND((COALESCE(psui.idx_tup_fetch, 0)::numeric / COALESCE(psui.idx_tup_read, 0)) * 100, 2)
+        ELSE
+            NULL
+    END AS index_efficiency_percent,        
+        --psui.last_idx_scan AS last_idx_scan, --since PG16
+        pg_get_indexdef(i.indexrelid) AS index_def    
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_stat_user_indexes psui ON i.indexrelid = psui.indexrelid
+    JOIN pg_stat_user_tables pstu ON pstu.relid = c.oid 
+    --where c.relname = 'table_name'
+    ORDER BY pg_relation_size(i.indexrelid) DESC;
 ```
 ### OUTPUT 1
 ```text
@@ -48,12 +77,12 @@ Indexes can introduce considerable overhead during table modifications, so it's 
         relid::regclass AS table, 
         indexrelid::regclass AS index, 
         pg_size_pretty(pg_relation_size(indexrelid::regclass)) AS index_size, 
-        idx_tup_read, 
-        idx_tup_fetch, idx_scan
+        idx_scan,
+        pg_get_indexdef(pg_index.indexrelid) AS index_def
     FROM pg_stat_user_indexes 
     JOIN pg_index USING (indexrelid) 
-    WHERE 
-        idx_scan = 0 AND indisunique IS FALSE
+    WHERE idx_scan = 0 AND indisunique IS FALSE
+    order by pg_relation_size(indexrelid::regclass) DESC;
 ```
 -----
 
@@ -68,6 +97,8 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
         pg_size_pretty(pg_relation_size(ii.indexrelid)) as overlapping_index_size,
         psui.idx_scan as index_num_scan,
         psui2.idx_scan as overlapping_index_num_scan,
+        psui.last_idx_scan AS index_last_scan_time, --since PG 16
+        psui2.last_idx_scan AS overlapping_index_last_scan, --since PG 16
         i.indkey AS index_attributes,
         ii.indkey AS overlapping_index_attributes,
         pg_get_indexdef(i.indexrelid) AS index_def, 
@@ -149,119 +180,4 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
 
 
 
-=====
-=====
 
-
-
-
-psql command
-
-
-\d table_name
-\di
-
-----
-
-select 
-    c.relnamespace::regnamespace as schema_name,
-    c.relname as table_name,
-    i.indexrelid::regclass as index_name,
-    i.indisprimary as is_pk,
-    i.indisunique as is_unique
-from pg_index i
-join pg_class c on c.oid = i.indrelid
-where c.relname = 'merchant_localization';
-
-
-
-----
-
-Index summary
-Here's a sample query to pull the number of rows, indexes, and some info about those indexes for each table.
-SELECT
-    pg_class.relname,
-    pg_size_pretty(pg_class.reltuples::bigint)            AS rows_in_bytes,
-    pg_class.reltuples                                    AS num_rows,
-    COUNT(*)                                              AS total_indexes,
-    COUNT(*) FILTER ( WHERE indisunique)                  AS unique_indexes,
-    COUNT(*) FILTER ( WHERE indnatts = 1 )                AS single_column_indexes,
-    COUNT(*) FILTER ( WHERE indnatts IS DISTINCT FROM 1 ) AS multi_column_indexes
-FROM
-    pg_namespace
-    LEFT JOIN pg_class ON pg_namespace.oid = pg_class.relnamespace
-    LEFT JOIN pg_index ON pg_class.oid = pg_index.indrelid
-WHERE
-    pg_namespace.nspname = 'public' AND
-    pg_class.relkind = 'r'
-GROUP BY pg_class.relname, pg_class.reltuples
-ORDER BY pg_class.reltuples DESC;
-
-
-----
-Index size/usage statistics
-Table & index sizes along which indexes are being scanned and how many tuples are fetched. See Disk Usage for another view that includes both table and index sizes.
-
-SELECT
-    t.schemaname,
-    t.tablename,
-    c.reltuples::bigint                            AS num_rows,
-    pg_size_pretty(pg_relation_size(c.oid))        AS table_size,
-    psai.indexrelname                              AS index_name,
-    pg_size_pretty(pg_relation_size(i.indexrelid)) AS index_size,
-    CASE WHEN i.indisunique THEN 'Y' ELSE 'N' END  AS "unique",
-    psai.idx_scan                                  AS number_of_scans,
-    psai.idx_tup_read                              AS tuples_read,
-    psai.idx_tup_fetch                             AS tuples_fetched
-FROM
-    pg_tables t
-    LEFT JOIN pg_class c ON t.tablename = c.relname
-    LEFT JOIN pg_index i ON c.oid = i.indrelid
-    LEFT JOIN pg_stat_all_indexes psai ON i.indexrelid = psai.indexrelid
-WHERE
-    t.schemaname NOT IN ('pg_catalog', 'information_schema') and  t.tablename = 'merchant_localization'
-ORDER BY 1, 2;
-
-
-
-
-https://www.enterprisedb.com/blog/effective-postgresql-monitoring-utilizing-pg-stat-all-tables-and-indexes-postgresql-16#:~:text=idx_tup_read%20is%20the%20number%20of,index%20scans%20using%20this%20index.
-
-
-SELECT
-	idxstat.schemaname as schema_name,
-	idxstat.relname AS table_name,
-	indexrelname AS index_name,
-	idxstat.idx_scan AS index_scans_count,
-    	idxstat.last_idx_scan AS last_idx_scan_timestamp,
-	pg_size_pretty(pg_relation_size(idxstat.indexrelid)) AS index_size
-FROM
-	pg_stat_all_indexes AS idxstat
-JOIN
-    pg_index i ON idxstat.indexrelid = i.indexrelid
-WHERE
-    idxstat.schemaname not in ('pg_catalog','information_schema','pg_toast')
-    AND NOT i.indisunique   -- is not a UNIQUE index
-ORDER BY
-	Idxstat.idx_scan ASC,
-	Idxstat.last_idx_scan ASC;
-
-SELECT
-    	tabstat.schemaname AS schema_name,
-tabstat.relname AS table_name,
-tabstat.seq_scan AS tab_seq_scan_count,
-    	tabstat.idx_Scan AS tab_index_scan_count,
-    	tabstat.last_seq_scan AS tab_last_seq_scan_timestamp,
-    	tabstat.last_idx_scan AS tab_last_idx_scan_timestamp,
-	pg_size_pretty(pg_total_relation_size(tabstat.relid)) AS table_size
-FROM
-	pg_stat_all_tables AS tabstat
-WHERE
-tabstat.schemaname not in ('pg_catalog','information_schema','pg_toast')
-ORDER BY
-	tabstat.last_seq_scan ASC,
-    	tabstat.last_idx_scan ASC;    
-
-
-https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp
-about idx_tup_fetch and idx_tup_read
