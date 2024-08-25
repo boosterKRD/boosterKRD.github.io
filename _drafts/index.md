@@ -1,9 +1,11 @@
 # Table of Contents
 
 1. [Indexes info with definition](#1-indexes-info-with-definition)
+   - [Output](#output-1)
 2. [Identifying unused indexes](#2-identifying-unused-indexes)
 3. [Duplicate indexes](#3-duplicate-indexes)
    - [Additional SQL queries for analyzing](#additional-sql-queries-for-analyzing)
+   - [Output](#output-3)
 
 ## 1. INDEXES INFO WITH DEFINITION
 ```sql
@@ -25,7 +27,7 @@
         idx.tablename,
         idx.indexname;
 ```
-- **OUTPUT**
+### OUTPUT 1
 ```text
 
     tablename   | indexname               |    indexdef
@@ -115,8 +117,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
     --Getting all queries that involve a table with indexes and the indexed columns for further analysis, you can use the following steps:
     select * from pg_stat_statements where  lower(query) like '%select%' and query like '%marathons_group_weekly_participants%' and query like '%participation_id%'  order by calls DESC;
 ```
-
-- **OUTPUT**
+### OUTPUT 3
 ```text
     -[ RECORD 1 ]+------------------------------------------------------------------------------------------------------------------
     table_name                    | public.adventure_route
