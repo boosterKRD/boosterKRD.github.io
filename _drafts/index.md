@@ -55,7 +55,7 @@ Indexes can introduce considerable overhead during table modifications, so it's 
 ```
 -----
 
-## 3. DUPLICATE INDEXIES
+## 3. DUPLICATE INDEXES
 Get a list of potential duplicate indexes, then manually analyze this list, taking into account the number of scans and  the queries from 'pg_stat_statements'
 ```sql
     SELECT 
@@ -94,7 +94,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
     GROUP BY ni.nspname, ct.relname, ci.relname, i.indexrelid, ii.indexrelid, psui.idx_scan, psui2.idx_scan, pg_get_indexdef(i.indexrelid), i.indkey, cii.relname, pg_get_indexdef(ii.indexrelid), ii.indkey
     ORDER BY 1, 2, 3;
 ```
--  Additional SQL queries for analyzing
+### ADDITIONAL SQL QUERIES FOR ANALYZING
 ```sql
     --This query shows the distribution of indexes in shared_buffers (Extension pg_buffercache is needed)
     SELECT  
