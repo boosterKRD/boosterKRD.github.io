@@ -1,10 +1,9 @@
-
 # Table of Contents
+
 1. [Indexes info with definition](#1-indexes-info-with-definition)
 2. [Identifying unused indexes](#2-identifying-unused-indexes)
 3. [Duplicate indexes](#3-duplicate-indexes)
    - [Additional SQL queries for analyzing](#additional-sql-queries-for-analyzing)
-
 
 ## 1. INDEXES INFO WITH DEFINITION
 ```sql
