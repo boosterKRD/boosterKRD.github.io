@@ -58,15 +58,20 @@ Table & index sizes along which indexes are being scanned and how many tuples ar
 ```
 ### OUTPUT 1
 ```text
-
-    tablename   | indexname               |    indexdef
-    +-----------------------------------------------------------------------------------------------------------------------------
-    accounts    | accounts_email_key      | CREATE UNIQUE INDEX accounts_email_key ON public.accounts USING btree (email)
-    accounts    | accounts_pkey           | CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (user_id)
-    accounts    | accounts_username_key   | CREATE UNIQUE INDEX accounts_username_key ON public.accounts USING btree (username)
-    actor       | actor_pkey              | CREATE UNIQUE INDEX actor_pkey ON public.actor USING btree (actor_id)
-    actor       | idx_actor_first_name    | CREATE INDEX idx_actor_first_name ON public.actor USING btree (first_name)
-    actor       | idx_actor_last_name     | CREATE INDEX idx_actor_last_name ON public.actor USING btree (last_name)
+-[ RECORD 1 ]---+-------------------------------------------
+table_name               | public.order_events
+num_rows                 | 1878214784
+seq_scan_count           | 65
+table_size               | 224 GB
+index_name               | order_events_event_id_unique_index
+index_size               | 51 GB
+primary                  | N
+unique                   | Y
+number_of_scans          | 2912495951
+rows_fetched             | 914291469
+rows_returned            | 1590927712
+index_efficiency_percent | 57.47
+index_def                | CREATE UNIQUE INDEX order_events_event_id_unique_index ON public.order_events USING btree (event_id)
 ```
 -----
 
