@@ -1,9 +1,9 @@
-SQL Query for Index:
-  1. [Indexes defenition](#1-)
-  2. [Indexes Info](#2-)
-  3. [Indexes Validattion](#2-)
-  4. [Duplicate Indexes](#2-)
 
+# Table of Contents
+1. [Indexes info with definition](#1-indexes-info-with-definition)
+2. [Identifying unused indexes](#2-identifying-unused-indexes)
+3. [Duplicate indexes](#3-duplicate-indexes)
+   - [Additional SQL queries for analyzing](#additional-sql-queries-for-analyzing)
 
 
 ## 1. INDEXES INFO WITH DEFINITION
