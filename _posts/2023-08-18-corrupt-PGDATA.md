@@ -4,7 +4,7 @@ title: Intentional Data Corruption for Backup Testing
 date: 2023-08-18
 ---
 
-Sometimes, when testing backup utilities like WAL-G, Pgbaclrest, and others, it's necessary to intentionally corrupt data. This is because the features advertised by these tools don't always correctly verify checksum corruption, for example, as in the case of [WAL-G](https://github.com/wal-g/wal-g/issues/1140), where the tool fails to detect bad checksums when using the -v flag.
+Sometimes, when testing backup utilities like WAL-G, Pgbackrest, and others, it's necessary to intentionally corrupt data. This is because the features advertised by these tools don't always correctly verify checksum corruption, for example, as in the case of [WAL-G](https://github.com/wal-g/wal-g/issues/1140), where the tool fails to detect bad checksums when using the -v flag.
 
 <!--MORE-->
 
