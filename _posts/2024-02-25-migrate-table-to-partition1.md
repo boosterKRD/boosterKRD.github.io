@@ -105,8 +105,7 @@ Let's do the final preparatory work before migration
   CREATE INDEX order_history_parent_user_id_idx ON public.order_history ((search_data ->> 'user_id'::text));
   CREATE INDEX order_history_parent_order_id_idx ON public.order_history((search_data ->> 'scoring_id'::text));
   CREATE INDEX order_history_parent_hash_order_idx ON public.order_history ((search_data ->> 'hash_order'::text));
-  ```
-
+  
   -- Attach the old table as a partition
   ALTER TABLE public.order_history ATTACH PARTITION public.order_history_old FOR VALUES FROM (MINVALUE) TO ('2024-08-01 00:00:00');
 
@@ -122,6 +121,7 @@ Let's do the final preparatory work before migration
 
   COMMIT;
   ```  
+
   This step involves renaming the existing table, creating a new partitioned table, and attaching the old table as a partition. New partitions are also created to manage data for future dates.
 
 
