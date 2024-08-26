@@ -191,7 +191,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
 ```
 
 ## 5. Index Create/Reindex Progress
-```sql
+    ```sql
     SELECT 
         now()::TIME(0), 
         a.query, 
@@ -200,7 +200,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
     FROM pg_stat_progress_create_index p 
     JOIN pg_stat_activity a ON p.pid = a.pid
     LEFT JOIN pg_stat_all_indexes ai on ai.relid = p.relid AND ai.indexrelid = p.index_relid;
-```
+    ```
 
 ## 6. Index Bloat Info
 ```sql
