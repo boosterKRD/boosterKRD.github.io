@@ -20,11 +20,11 @@ date: 2024-08-25
 -----
 ## 0. Stats Reset Time
 ```sql
-    select
-        sd.stats_reset::timestamptz(0),
-        ((extract(epoch from now()) - extract(epoch from sd.stats_reset))/86400)::int as days
-    from pg_stat_database sd
-    where datname = current_database();
+select
+    sd.stats_reset::timestamptz(0),
+    ((extract(epoch from now()) - extract(epoch from sd.stats_reset))/86400)::int as days
+from pg_stat_database sd
+where datname = current_database();
 ```
 
 ## 1.Indexes Info
@@ -32,33 +32,33 @@ Table & index sizes along which indexes are being scanned and how many tuples ar
 [About idx_tup_fetch and idx_tup_read](https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp)
 
 ```sql
-    SELECT 
-        n.nspname || '.' || c.relname AS table_name, 
-        c.reltuples::bigint AS num_rows,
-        COALESCE(pstu.seq_scan, 0) AS seq_scan_count, 
-        --pstu.last_seq_scan AS last_seq_scan_, --since PG 16
-        pg_size_pretty(pg_relation_size(c.oid)) AS table_size, 
-        i.indexrelid::regclass AS index_name,
-        pg_size_pretty(pg_relation_size(i.indexrelid)) AS index_size,
-        CASE WHEN i.indisprimary THEN 'Y' ELSE 'N' END AS "primary",
-        CASE WHEN i.indisunique THEN 'Y' ELSE 'N' END AS "unique",
-        COALESCE(psui.idx_scan, 0) AS number_of_scans,
-        COALESCE(psui.idx_tup_fetch, 0) AS rows_fetched,
-        COALESCE(psui.idx_tup_read, 0) AS rows_returned,
-        CASE WHEN COALESCE(psui.idx_tup_read, 0) > 0 THEN
-            ROUND((COALESCE(psui.idx_tup_fetch, 0)::numeric / COALESCE(psui.idx_tup_read, 0)) * 100, 2)
-        ELSE
-            NULL
-    END AS index_efficiency_percent,        
-        --psui.last_idx_scan AS last_idx_scan, --since PG16
-        pg_get_indexdef(i.indexrelid) AS index_def    
-    FROM pg_index i
-    JOIN pg_class c ON c.oid = i.indrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    JOIN pg_stat_user_indexes psui ON i.indexrelid = psui.indexrelid
-    JOIN pg_stat_user_tables pstu ON pstu.relid = c.oid 
-    --where c.relname = 'table_name'
-    ORDER BY pg_relation_size(i.indexrelid) DESC;
+SELECT 
+    n.nspname || '.' || c.relname AS table_name, 
+    c.reltuples::bigint AS num_rows,
+    COALESCE(pstu.seq_scan, 0) AS seq_scan_count, 
+    --pstu.last_seq_scan AS last_seq_scan_, --since PG 16
+    pg_size_pretty(pg_relation_size(c.oid)) AS table_size, 
+    i.indexrelid::regclass AS index_name,
+    pg_size_pretty(pg_relation_size(i.indexrelid)) AS index_size,
+    CASE WHEN i.indisprimary THEN 'Y' ELSE 'N' END AS "primary",
+    CASE WHEN i.indisunique THEN 'Y' ELSE 'N' END AS "unique",
+    COALESCE(psui.idx_scan, 0) AS number_of_scans,
+    COALESCE(psui.idx_tup_fetch, 0) AS rows_fetched,
+    COALESCE(psui.idx_tup_read, 0) AS rows_returned,
+    CASE WHEN COALESCE(psui.idx_tup_read, 0) > 0 THEN
+        ROUND((COALESCE(psui.idx_tup_fetch, 0)::numeric / COALESCE(psui.idx_tup_read, 0)) * 100, 2)
+    ELSE
+        NULL
+END AS index_efficiency_percent,        
+    --psui.last_idx_scan AS last_idx_scan, --since PG16
+    pg_get_indexdef(i.indexrelid) AS index_def    
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_stat_user_indexes psui ON i.indexrelid = psui.indexrelid
+JOIN pg_stat_user_tables pstu ON pstu.relid = c.oid 
+--where c.relname = 'table_name'
+ORDER BY pg_relation_size(i.indexrelid) DESC;
 ```
 ### Output 1
 ```text
