@@ -5,5 +5,8 @@ date: 2024-08-25
 ---
 
 # Table of Contents
-0. [Index](index.md)
-1. [Table](table.md)
+1. [Index Commands](index.md)
+2. [Table Commands](table.md)
+3. [Lock Commands](lock.md)
+4. [WAL Commands](wal.md)
+5. [User Grants Commands](grants.md)

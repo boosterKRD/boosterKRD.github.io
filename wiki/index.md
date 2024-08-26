@@ -1,20 +1,20 @@
 ---
 layout: post
-title: Index in PostgrSQL
+title: Useful Index Commands
 date: 2024-08-25
 ---
 # Table of Contents
-0. [Time when stats was reset ](#0-time-when-stats-was-reset)
-1. [Indexes info with definition](#1-indexes-info-with-definition)
+0. [Stats Reset Time](#0-stats-reset-time)
+1. [Indexes Info](#1-indexes-info)
    - [Output](#output-1)
-2. [Identifying unused indexes](#2-identifying-unused-indexes)
-3. [Duplicate indexes](#3-duplicate-indexes)
-   - [Additional SQL queries for analyzing](#additional-sql-queries-for-analyzing)
+2. [Identifying Unused Indexes](#2-identifying-unused-indexes)
+3. [Duplicate Indexes](#3-duplicate-indexes)
+   - [Additional SQL Queries for Analyzing](#additional-sql-queries-for-analyzing)
    - [Output](#output-3)
 <!--MORE-->
 
 -----
-## 0. TIME WHEN STATS WAS RESET
+## 0. Stats Reset Time
 ```sql
     select
         sd.stats_reset::timestamptz(0),
@@ -23,7 +23,7 @@ date: 2024-08-25
     where datname = current_database();
 ```
 
-## 1. INDEXES INFO
+## 1.Indexes Info
 Table & index sizes along which indexes are being scanned and how many tuples are fetched. 
 [About idx_tup_fetch and idx_tup_read](https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp)
 
@@ -56,7 +56,7 @@ Table & index sizes along which indexes are being scanned and how many tuples ar
     --where c.relname = 'table_name'
     ORDER BY pg_relation_size(i.indexrelid) DESC;
 ```
-### OUTPUT 1
+### Output 1
 ```text
 -[ RECORD 1 ]---+-------------------------------------------
 table_name               | public.order_events
@@ -75,7 +75,7 @@ index_def                | CREATE UNIQUE INDEX order_events_event_id_unique_inde
 ```
 -----
 
-## 2. IDENTIFYING UNUSED INDEXES
+## 2. Identifying Unused Indexes
 Indexes can introduce considerable overhead during table modifications, so it's important to remove them if they aren't being utilized for queries or enforcing constraints (such as ensuring uniqueness). Here’s how to identify such indexes:
 ```sql
     SELECT 
@@ -91,7 +91,7 @@ Indexes can introduce considerable overhead during table modifications, so it's 
 ```
 -----
 
-## 3. DUPLICATE INDEXES
+## 3. Duplicate Indexes
 Get a list of potential duplicate indexes, then manually analyze this list, taking into account the number of scans and  the queries from 'pg_stat_statements'
 ```sql
     SELECT 
@@ -132,7 +132,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
     GROUP BY ni.nspname, ct.relname, ci.relname, i.indexrelid, ii.indexrelid, psui.idx_scan, psui2.idx_scan, pg_get_indexdef(i.indexrelid), i.indkey, cii.relname, pg_get_indexdef(ii.indexrelid), ii.indkey
     ORDER BY 1, 2, 3;
 ```
-### ADDITIONAL SQL QUERIES FOR ANALYZING
+### Additional SQL Queries for Analyzing
 ```sql
     --This query shows the distribution of indexes in shared_buffers (Extension pg_buffercache is needed)
     SELECT  
@@ -153,7 +153,7 @@ Get a list of potential duplicate indexes, then manually analyze this list, taki
     --Getting all queries that involve a table with indexes and the indexed columns for further analysis, you can use the following steps:
     select * from pg_stat_statements where  lower(query) like '%select%' and query like '%marathons_group_weekly_participants%' and query like '%participation_id%'  order by calls DESC;
 ```
-### OUTPUT 3
+### Output 3
 ```text
     -[ RECORD 1 ]+------------------------------------------------------------------------------------------------------------------
     table_name                    | public.adventure_route
