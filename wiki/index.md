@@ -14,6 +14,7 @@ date: 2024-08-25
 4. [Invalid Indexes](#4-invalid-indexes)
 5. [Index Create/Reindex Progress](#5-index-create-reindex-progress)
 6. [Index Bloat Info](#6-index-bloat-info)
+7. [Reset Index Stat](#7-reset-index-stat)
 
 <!--MORE-->
 
@@ -82,16 +83,24 @@ index_def                | CREATE UNIQUE INDEX order_events_event_id_unique_inde
 ## 2. Identifying Unused Indexes
 Indexes can introduce considerable overhead during table modifications, so it's important to remove them if they aren't being utilized for queries or enforcing constraints (such as ensuring uniqueness). Here’s how to identify such indexes:
 ```sql
-SELECT 
-    relid::regclass AS table, 
-    indexrelid::regclass AS index, 
-    pg_size_pretty(pg_relation_size(indexrelid::regclass)) AS index_size, 
-    idx_scan,
-    pg_get_indexdef(pg_index.indexrelid) AS index_def
-FROM pg_stat_user_indexes 
-JOIN pg_index USING (indexrelid) 
-WHERE idx_scan = 0 AND indisunique IS FALSE
-order by pg_relation_size(indexrelid::regclass) DESC;
+SELECT s.schemaname,
+       s.relname AS tablename,
+       s.indexrelname AS indexname,
+       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
+       pg_get_indexdef(i.indexrelid) AS index_def
+FROM pg_catalog.pg_stat_user_indexes s
+   JOIN pg_catalog.pg_index i ON s.indexrelid = i.indexrelid
+WHERE s.idx_scan = 0      -- has never been scanned
+  AND 0 <>ALL (i.indkey)  -- no index column is an expression
+  AND NOT i.indisunique   -- is not a UNIQUE index
+  AND NOT EXISTS          -- does not enforce a constraint. For EXCLUDE USING 
+         (SELECT 1 FROM pg_catalog.pg_constraint c
+          WHERE c.conindid = s.indexrelid) 
+  AND NOT EXISTS          -- is not an index partition
+         (SELECT 1 FROM pg_catalog.pg_inherits AS inh
+          WHERE inh.inhrelid = s.indexrelid)
+ORDER BY pg_relation_size(s.indexrelid) DESC; 
+
 ```
 -----
 
@@ -297,6 +306,13 @@ FROM (
 ) AS relation_stats
 where nspname not in ('information_schema','pg_catalog')
 ORDER BY bs*(relpages)::bigint  DESC  nulls last limit 200;
+```
+
+## 7. Reset Index Stat
+```sql
+select pg_stat_reset_single_table_counters(indexrelid) 
+from pg_stat_all_indexes 
+where indexrelname = 'INDEX_NAME';
 ```
 -----
 
