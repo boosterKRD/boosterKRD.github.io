@@ -62,6 +62,14 @@ aaa
 
 ![pgbouncer_v2_2](/img/img1.png)
 
+bbb
+
+![pgbouncer_v2_2]({{ site.baseurl }}/_posts/img/img1.png)
+
+мм
+
+![pgbouncer_v2_2](/assets/posts/img1.png)
+
 In a scenario where a load balancer is placed in front of the database server, a cancellation request might be directed to a different database instance than the one processing the original query. This happens because the cancellation request opens a new TCP connection (step 3), which can be handled by any of the PostgreSQL replicas. When the cancellation request reaches a replica, it looks for the corresponding active query in its list. If it doesn’t find it (step 4), the cancellation request will be ignored.
 
 The only reliable method to manage query cancellation in this setup is to implement server-side controls. Setting a `statement_timeout` and using the `pg_cancel_backend(pid)` function can help mitigate the challenge, but these approaches require careful management, monitoring, and are not flexible.
