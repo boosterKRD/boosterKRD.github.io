@@ -5,6 +5,10 @@ date: 2024-08-20
 ---
 **[Original post URL](https://dataegret.com/2024/08/handling_cancellation_request/)**
 
+
+## Introduction
+PgBouncer is a popular connection pooler for PostgreSQL that helps optimize database performance by reducing the number of open connections and improving overall efficiency. It's widely used in database clusters as a link between the client and the server, and often works alongside different load balancers. However, in some cases, issues with cancellation requests can arise. Let's explore when this problem occurs and how it can be solved.
+
 ### Table of Contents
 1. [Introduction](#introduction)
 2. [What is a Cancellation Request?](#what-is-a-cancellation-request)
@@ -19,10 +23,6 @@ date: 2024-08-20
 <!--MORE-->
 
 -----
-
-## Introduction
-
-PgBouncer is a popular connection pooler for PostgreSQL that helps optimize database performance by reducing the number of open connections and improving overall efficiency. It's widely used in database clusters as a link between the client and the server, and often works alongside different load balancers. However, in some cases, issues with cancellation requests can arise. Let's explore when this problem occurs and how it can be solved.
 
 ## What is a Cancellation Request?
 
