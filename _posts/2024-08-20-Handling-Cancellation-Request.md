@@ -3,7 +3,7 @@ layout: post
 title: Handling Cancellation Request 
 date: 2024-08-20
 ---
-**[Original post URL]**(https://dataegret.com/2024/08/handling_cancellation_request/) 
+**[Original post URL](https://dataegret.com/2024/08/handling_cancellation_request/)**
 
 ### Table of Contents
 1. [Introduction](#introduction)
