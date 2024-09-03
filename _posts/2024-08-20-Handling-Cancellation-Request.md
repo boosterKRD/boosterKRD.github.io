@@ -3,6 +3,8 @@ layout: post
 title: Handling Cancellation Request 
 date: 2024-08-20
 ---
+**[Original post URL]**(https://dataegret.com/2024/08/handling_cancellation_request/) 
+
 ### Table of Contents
 1. [Introduction](#introduction)
 2. [What is a Cancellation Request?](#what-is-a-cancellation-request)
@@ -148,4 +150,4 @@ Peering support in PgBouncer, starting from version 1.19.0, solves the problem o
 
 Using peering in PgBouncer is an important step towards improving the performance and reliability of systems utilizing load balancing.
 
-In PgBouncer version 1.21.0, the method of encoding the peer_id in the cancellation token was changed. This change breaks the cancellation of queries in clusters with different versions of PgBouncer. Therefore, it is important to ensure that all PgBouncer processes and instances in the cluster are updated to the same version to ensure proper cancellation of queries.
+ℹ️ INFO: In PgBouncer version 1.21.0, the method of encoding the peer_id in the cancellation token was changed. This change breaks the cancellation of queries in clusters with different versions of PgBouncer. Therefore, it is important to ensure that all PgBouncer processes and instances in the cluster are updated to the same version to ensure proper cancellation of queries.
