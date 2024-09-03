@@ -56,7 +56,7 @@ The common challenge in both scenarios described below is that the cancellation 
 
 Load balancers are typically used to distribute incoming requests across multiple database instances, often read replicas, to optimize resource usage and improve performance. This setup is particularly beneficial in read-heavy environments, where multiple replicas can serve read requests simultaneously, reducing the load on the primary database server.
 
-![pgbouncer_v2_2.png](https://dataegret.atlassian.net/wiki/download/thumbnails/214401027/pgbouncer_v2_2.png?version=1&modificationDate=1722843576901&cacheVersion=1&api=v2&width=353&height=403)
+![pgbouncer_v2_2.png](img/img1.png)
 
 In a scenario where a load balancer is placed in front of the database server, a cancellation request might be directed to a different database instance than the one processing the original query. This happens because the cancellation request opens a new TCP connection (step 3), which can be handled by any of the PostgreSQL replicas. When the cancellation request reaches a replica, it looks for the corresponding active query in its list. If it doesn’t find it (step 4), the cancellation request will be ignored.
 
@@ -64,7 +64,7 @@ The only reliable method to manage query cancellation in this setup is to implem
 
 ### **2. Using PgBouncer in so_reuseport Mode and/or Multiple PgBouncer Instances**
 
-![pgbouncer_2.png](https://dataegret.atlassian.net/wiki/download/thumbnails/214401027/pgbouncer_2.png?version=1&modificationDate=1722872231356&cacheVersion=1&api=v2&width=730&height=445)
+![pgbouncer_2.png](img/img22.png)
 
 In this scenario, a cancellation request might be routed to the wrong PgBouncer process that is not handling the original query. Just like in setups with load balancers, this happens because the cancellation request opens a new TCP connection (step 4), which can be handled by any of the PgBouncer processes. When the cancellation request reaches PgBouncer, it looks for the corresponding active server connection in its list. If it doesn’t find it (step 5) (for example, if another PgBouncer process is handling the query), the cancellation request will be ignored.
 
