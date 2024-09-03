@@ -56,7 +56,11 @@ The common challenge in both scenarios described below is that the cancellation 
 
 Load balancers are typically used to distribute incoming requests across multiple database instances, often read replicas, to optimize resource usage and improve performance. This setup is particularly beneficial in read-heavy environments, where multiple replicas can serve read requests simultaneously, reducing the load on the primary database server.
 
-![pgbouncer_v2_2](/_posts/img/img1.png)
+![pgbouncer_v2_2](img/img1.png)
+
+aaa
+
+![pgbouncer_v2_2](/img/img1.png)
 
 In a scenario where a load balancer is placed in front of the database server, a cancellation request might be directed to a different database instance than the one processing the original query. This happens because the cancellation request opens a new TCP connection (step 3), which can be handled by any of the PostgreSQL replicas. When the cancellation request reaches a replica, it looks for the corresponding active query in its list. If it doesn’t find it (step 4), the cancellation request will be ignored.
 
