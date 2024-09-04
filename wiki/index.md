@@ -137,7 +137,7 @@ JOIN pg_index ii ON ii.indrelid=i.indrelid AND
     i.indpred IS NULL AND
     ii.indpred IS NULL AND
     CASE WHEN i.indisunique THEN ii.indisunique AND array_to_string(ii.indkey, ' ') = array_to_string(i.indkey, ' ') ELSE true END
-JOIN pg_stat_user_indexes psui2 on psui2.indexrelid=iiindexrelid                         
+JOIN pg_stat_user_indexes psui2 on psui2.indexrelid=ii.indexrelid                         
 JOIN pg_class ctii ON ii.indrelid=ctii.oid
 JOIN pg_class cii ON ii.indexrelid=cii.oid
 WHERE ct.relname NOT LIKE 'pg_%' AND

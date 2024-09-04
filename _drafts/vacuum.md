@@ -2,6 +2,10 @@ https://medium.com/helpshift-engineering/auto-vacuum-tuning-in-postgresql-3408f8
 https://resources.pganalyze.com/pganalyze_Tuning_autovacuum_for_best_Postgres_performance.pdf
 https://www.cybertec-postgresql.com/en/tuning-autovacuum-postgresql/
 
+https://github.com/aws-samples/aurora-and-database-migration-labs/tree/master/Code/PGPerfStatsSnapper/SQLs
+
+
+
 ## Database max Xid age
 ```sql
 WITH max_age AS (
@@ -136,3 +140,13 @@ ORDER BY
 --------------------------+--------+--------------------------+--------------------------+--------------+---------+---------+---------+-------------+-------------+--------------------------------------------------------------------------------------
  5 days 01:51:55.487 | active | 5 days 01:51:55.487 | 5 days 01:51:55.482 | testdb   |  84 |         | f       |             |             | autovacuum: VACUUM ANALYZE public.test2 (to prevent wraparound)
 ```
+
+
+
+## ]КВЫ
+The following query shows the number of "dead" tuples in a table named table1:
+
+    SELECT relname, n_dead_tup, last_vacuum, last_autovacuum FROM 
+    pg_catalog.pg_stat_all_tables 
+    WHERE n_dead_tup > 0 and relname = 'table1';
+
