@@ -86,7 +86,7 @@ Indexes can introduce considerable overhead during table modifications, so it's 
 SELECT s.schemaname,
        s.relname AS tablename,
        s.indexrelname AS indexname,
-       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
+       pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size,
        pg_get_indexdef(i.indexrelid) AS index_def
 FROM pg_catalog.pg_stat_user_indexes s
    JOIN pg_catalog.pg_index i ON s.indexrelid = i.indexrelid
