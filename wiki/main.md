@@ -10,3 +10,4 @@ date: 2024-08-25
 3. [Lock Commands](lock.md)
 4. [WAL Commands](wal.md)
 5. [User Grants Commands](grants.md)
+6. [Vacuum Commands](vacuum.md)
