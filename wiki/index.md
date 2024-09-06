@@ -28,7 +28,7 @@ from pg_stat_database sd
 where datname = current_database();
 ```
 
-## 1.Indexes Info
+## 1. Indexes Info
 Table & index sizes along which indexes are being scanned and how many tuples are fetched. 
 [About idx_tup_fetch and idx_tup_read](https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp)
 
