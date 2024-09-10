@@ -4,22 +4,25 @@ title: Useful Index Commands
 date: 2024-08-25
 ---
 # Table of Contents
-0. [Stats Reset Time](#0-stats-reset-time)
-1. [Indexes Info](#1-indexes-info)
-   - [Output](#output-1)
-2. [Identifying Unused Indexes](#2-identifying-unused-indexes)
-3. [Duplicate Indexes](#3-duplicate-indexes)
+1. [Stats Reset Time](#1-stats-reset-time)
+2. [Indexes Info](#2-indexes-info)
+   - [Output](#output-2)
+3. [Identifying Unused Indexes](#3-identifying-unused-indexes)
+4. [Duplicate Indexes](#4-duplicate-indexes)
    - [Additional SQL Queries for Analyzing](#additional-sql-queries-for-analyzing)
-   - [Output](#output-3)
-4. [Invalid Indexes](#4-invalid-indexes)
-5. [Index Create/Reindex Progress](#5-index-create-reindex-progress)
-6. [Index Bloat Info](#6-index-bloat-info)
-7. [Reset Index Stat](#7-reset-index-stat)
-
+   - [Output](#output-4)
+5. [Invalid Indexes](#5-invalid-indexes)
+6. [Index Create/Reindex Progress](#6-index-create-reindex-progress)
+7. [Index Bloat Info](#7-index-bloat-info)
+8. [Reset Index Stat](#8-reset-index-stat)
+9. [Column Value Frequency Analysis](#9-column-value-frequency-analysis)  
+   - [Column Statistics and Selectivity](#column-statistics-and-selectivity) 
+   - [Column Most Common Values and Frequencies Analysis](#column-most-common-calues-and-frequencies-analysis)  
+   - [Calculating Estimated Row Count](#calculating-estimated-row-сount)  
 <!--MORE-->
 
 -----
-## 0. Stats Reset Time
+## 1. Stats Reset Time
 ```sql
 select
     sd.stats_reset::timestamptz(0),
@@ -28,7 +31,7 @@ from pg_stat_database sd
 where datname = current_database();
 ```
 
-## 1. Indexes Info
+## 2. Indexes Info
 Table & index sizes along which indexes are being scanned and how many tuples are fetched. 
 [About idx_tup_fetch and idx_tup_read](https://dev.to/dm8ry/postgresql-how-do-you-find-potentially-ineffective-indexes-6gp)
 
@@ -61,7 +64,7 @@ JOIN pg_stat_user_tables pstu ON pstu.relid = c.oid
 --where c.relname = 'table_name'
 ORDER BY pg_relation_size(i.indexrelid) DESC;
 ```
-### Output 1
+### Output 2
 ```text
 -[ RECORD 1 ]---+-------------------------------------------
 table_name               | public.order_events
@@ -80,7 +83,7 @@ index_def                | CREATE UNIQUE INDEX order_events_event_id_unique_inde
 ```
 -----
 
-## 2. Identifying Unused Indexes
+## 3. Identifying Unused Indexes
 Indexes can introduce considerable overhead during table modifications, so it's important to remove them if they aren't being utilized for queries or enforcing constraints (such as ensuring uniqueness). Here’s how to identify such indexes:
 ```sql
 SELECT s.schemaname,
@@ -104,7 +107,7 @@ ORDER BY pg_relation_size(s.indexrelid) DESC;
 ```
 -----
 
-## 3. Duplicate Indexes
+## 4. Duplicate Indexes
 Get a list of potential duplicate indexes, then manually analyze this list, taking into account the number of scans and  the queries from 'pg_stat_statements'
 ```sql
 SELECT 
@@ -165,7 +168,7 @@ ORDER BY 3 DESC;
 --Getting all queries that involve a table with indexes and the indexed columns for further analysis, you can use the following steps:
 select * from pg_stat_statements where  lower(query) like '%select%' and query like '%marathons_group_weekly_participants%' and query like '%participation_id%'  order by calls DESC;
 ```
-### Output 3
+### Output 4
 ```text
 `-[ RECORD 1 `+----------------------------------------------------------------------------
 `table_name                    | public.adventure_route
@@ -193,12 +196,12 @@ select * from pg_stat_statements where  lower(query) like '%select%' and query l
 `overlapping_index_def         | CREATE UNIQUE INDEX order_completes_unique_index ON public.order_completes USING btree (order_id, userable_id, userable_type)
 ```
 
-## 4.Invalid Indexes
+## 5.Invalid Indexes
 ```sql
 SELECT indexrelid::regclass, indrelid::regclass,indisvalid,indisready FROM pg_index i WHERE i.indisvalid IS FALSE;
 ```
 
-## 5. Index Create/Reindex Progress
+## 6. Index Create/Reindex Progress
 ```sql
 SELECT 
     now()::TIME(0), 
@@ -210,7 +213,7 @@ JOIN pg_stat_activity a ON p.pid = a.pid
 LEFT JOIN pg_stat_all_indexes ai on ai.relid = p.relid AND ai.indexrelid = p.index_relid;
  ```
 
-## 6. Index Bloat Info
+## 7. Index Bloat Info
 ```sql
 SELECT current_database() as tag_dbname, nspname as tag_schema, tblname astag_table_name, idxname  as tag_index_name, 
 quote_ident(nspname) || '.' || quote_ident(tblname) as tag_table_full_name,
@@ -308,7 +311,7 @@ where nspname not in ('information_schema','pg_catalog')
 ORDER BY bs*(relpages)::bigint  DESC  nulls last limit 200;
 ```
 
-## 7. Reset Index Stat
+## 8. Reset Index Stat
 ```sql
 select pg_stat_reset_single_table_counters(indexrelid) 
 from pg_stat_all_indexes 
@@ -316,7 +319,64 @@ where indexrelname = 'INDEX_NAME';
 ```
 -----
 
+## 9. Column Value Frequency Analysis
+This section describes SQL queries and techniques for analyzing column value frequencies to estimate row counts based on specific values in a PostgreSQL database.
+
+## Column Statistics and Selectivity
+This query provides statistics about columns in a table, including correlation, selectivity, and the number of distinct values.
+```sql
+SELECT 
+    cl.reltuples, attname, correlation,n_distinct,
+    CASE 
+        WHEN n_distinct = -1 THEN cl.reltuples / cl.reltuples
+        ELSE n_distinct / cl.reltuples
+    END AS selectivity
+FROM pg_stats pg_s
+JOIN pg_class cl ON pg_s.tablename = cl.relname
+WHERE tablename = 'test_table'
+ORDER BY ABS(correlation) DESC;
+```
+### Output 9.1
+```text
+tablename       | column           | estimated_rows
+----------------+------------------+-----------
+your_table_name | your_column_name | 33312323
+```
+This query retrieves statistics for each column of the specified table (test_table), such as the number of rows (reltuples), column name (attname), correlation between columns, number of distinct values (n_distinct), and calculates the selectivity based on the ratio of distinct values to the total number of rows. The results are ordered by the absolute value of correlation to highlight the most significant relationships.
 
 
+## Column Most Common Values and Frequencies Analysis
+This query provides statistics about columns in a table, including correlation, selectivity, and the number of distinct values.
+```sql
+SELECT  
+    tablename, attname, most_common_vals,most_common_freqs,correlation
+FROM pg_stats
+WHERE tablename = 'test_table' 
+  AND attname = 'status';
+```
+### Output 9.2
+```text
+          tablename          |       most_common_vals       |         most_common_freqs          | correlation
+-----------------------------+------------------------------+------------------------------------+-------------
+ test_table                  | {published,enqueued,invalid} | {0.5240333,0.41853333,0.057433333} | -0.42097768
+```
+This query provides detailed statistics for the status column in the hydra_channel_rabbit_events table. It displays the most common values in the column, their respective frequencies, and the correlation with other columns. This information helps in understanding the distribution and relationships of values within the column.
 
 
+## Calculating Estimated Row Count
+To estimate the number of rows for a specific value in a column, you can use the following SQL query:
+```sql
+--Replace 'specific_value' with the value you want to check.
+SELECT s.tablename, s.attname as column, s.most_common_freqs[
+    array_position((s.most_common_vals::text::text[]), 'specific_value')
+    ] as estimated_rows
+FROM pg_class 
+JOIN pg_stats s ON s.tablename = relname
+WHERE s.tablename = 'your_table_name' AND s.attname = 'your_column_name';
+```
+### Output 9.3
+```text
+tablename       | column           | estimated_rows
+----------------+------------------+-----------
+your_table_name | your_column_name | 33312323
+```
