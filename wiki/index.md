@@ -320,7 +320,7 @@ where indexrelname = 'INDEX_NAME';
 -----
 
 ## 9. Column Value Frequency Analysis
-This section describes SQL queries and techniques for analyzing column value frequencies to estimate row counts based on specific values in a PostgreSQL database.
+This section describes SQL queries and techniques for analyzing column value frequencies to estimate row counts for specific values in a PostgreSQL database and selectivity. This data is useful for understanding the effectiveness of both existing and newly created indexes.
 
 ## Column Statistics and Selectivity
 This query provides statistics about columns in a table, including correlation, selectivity, and the number of distinct values.
