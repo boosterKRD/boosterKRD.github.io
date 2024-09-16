@@ -54,12 +54,25 @@ SELECT
     ELSE
         NULL
 END AS index_efficiency_percent,        
+    CASE
+        WHEN (psai.idx_blks_hit + psai.idx_blks_read) > 0
+        THEN ROUND((psai.idx_blks_hit::numeric / (psai.idx_blks_hit + psai.idx_blks_read)) * 100, 2)
+        ELSE NULL
+    END AS index_hit_ratio_percent,
+    CASE
+        WHEN (psai.idx_blks_hit + psai.idx_blks_read) > 0 AND psui.idx_scan > 0
+        THEN ROUND(((psai.idx_blks_hit + psai.idx_blks_read)) / psui.idx_scan, 2)
+        ELSE NULL
+    END AS page_per_scan,  
+    psai.idx_blks_hit AS index_blks_hit,
+    psai.idx_blks_read AS index_blks_read,
     --psui.last_idx_scan AS last_idx_scan, --since PG16
     pg_get_indexdef(i.indexrelid) AS index_def    
 FROM pg_index i
 JOIN pg_class c ON c.oid = i.indrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_stat_user_indexes psui ON i.indexrelid = psui.indexrelid
+JOIN pg_statio_all_indexes psai ON psai.indexrelid = i.indexrelid
 JOIN pg_stat_user_tables pstu ON pstu.relid = c.oid 
 --where c.relname = 'table_name'
 ORDER BY pg_relation_size(i.indexrelid) DESC;
@@ -120,12 +133,27 @@ SELECT
     psui2.idx_scan as overlapping_index_num_scan,
     psui.last_idx_scan AS index_last_scan_time, --since PG 16
     psui2.last_idx_scan AS overlapping_index_last_scan, --since PG 16
+    CASE 
+        WHEN (psai.idx_blks_hit + psai.idx_blks_read) > 0 
+        THEN ROUND((psai.idx_blks_hit::numeric / (psai.idx_blks_hit + psai.idx_blks_read)) * 100, 2) 
+        ELSE NULL 
+    END AS index_hit_ratio_percent,
+    CASE 
+        WHEN (psai2.idx_blks_hit + psai2.idx_blks_read) > 0 
+        THEN ROUND((psai2.idx_blks_hit::numeric / (psai2.idx_blks_hit + psai2.idx_blks_read)) * 100, 2) 
+        ELSE NULL 
+    END AS overlapping_index_hit_ratio_percent,
+    psai.idx_blks_hit AS index_blks_hit,
+    psai2.idx_blks_hit AS overlapping_index_blks_hit,
+    psai.idx_blks_read AS index_blks_read,
+    psai2.idx_blks_read AS overlapping_index_blks_read,
     i.indkey AS index_attributes,
     ii.indkey AS overlapping_index_attributes,
     pg_get_indexdef(i.indexrelid) AS index_def, 
     pg_get_indexdef(ii.indexrelid) AS overlapping_index_def
 FROM pg_index i
 JOIN pg_stat_user_indexes psui on psui.indexrelid=i.indexrelid
+JOIN pg_statio_all_indexes psai ON psai.indexrelid = i.indexrelid
 JOIN pg_class ct ON i.indrelid=ct.oid
 JOIN pg_class ci ON i.indexrelid=ci.oid
 JOIN pg_namespace ni ON ci.relnamespace=ni.oid
@@ -140,12 +168,16 @@ JOIN pg_index ii ON ii.indrelid=i.indrelid AND
     i.indpred IS NULL AND
     ii.indpred IS NULL AND
     CASE WHEN i.indisunique THEN ii.indisunique AND array_to_string(ii.indkey, ' ') = array_to_string(i.indkey, ' ') ELSE true END
-JOIN pg_stat_user_indexes psui2 on psui2.indexrelid=ii.indexrelid                         
+JOIN pg_stat_user_indexes psui2 on psui2.indexrelid=ii.indexrelid
+JOIN pg_statio_all_indexes psai2 ON psai2.indexrelid = ii.indexrelid
 JOIN pg_class ctii ON ii.indrelid=ctii.oid
 JOIN pg_class cii ON ii.indexrelid=cii.oid
 WHERE ct.relname NOT LIKE 'pg_%' AND
     NOT i.indisprimary AND (ci.relname < cii.relname OR i.indkey <> ii.indkey) 
-GROUP BY ni.nspname, ct.relname, ci.relname, i.indexrelid, ii.indexrelid, psuiidx_scan, psui2.idx_scan, pg_get_indexdef(i.indexrelid), i.indkey, cii.relname,pg_get_indexdef(ii.indexrelid), ii.indkey
+GROUP BY ni.nspname, ct.relname, ci.relname, i.indexrelid, ii.indexrelid, psui.idx_scan, 
+psui.last_idx_scan, --since PG 16
+psui2.last_idx_scan, --since PG 16
+psui2.idx_scan, psai.idx_blks_hit, psai.idx_blks_read, psai2.idx_blks_hit, psai2.idx_blks_read, pg_get_indexdef(i.indexrelid), i.indkey, cii.relname, pg_get_indexdef(ii.indexrelid), ii.indkey
 ORDER BY 1, 2, 3;
 ```
 ### Additional SQL Queries for Analyzing
@@ -323,7 +355,8 @@ where indexrelname = 'INDEX_NAME';
 This section describes SQL queries and techniques for analyzing column value frequencies to estimate row counts for specific values in a PostgreSQL database and selectivity. This data is useful for understanding the effectiveness of both existing and newly created indexes.
 
 ## Column Statistics and Selectivity
-This query provides statistics about columns in a table, including correlation, selectivity, and the number of distinct values.
+This query provides important statistics about the columns in a table, including correlation, selectivity, and the number of distinct values (n_distinct).
+- Correlation: In PostgreSQL, correlation refers to how closely the physical order of rows in a table matches the ordering of values in a specific column. The correlation value ranges from -1 to 1
 ```sql
 SELECT 
     cl.reltuples, attname, correlation,n_distinct,
@@ -338,30 +371,43 @@ ORDER BY ABS(correlation) DESC;
 ```
 ### Output 9.1
 ```text
-tablename       | column           | estimated_rows
-----------------+------------------+-----------
-your_table_name | your_column_name | 33312323
+ reltuples |         attname          |  correlation  |  n_distinct   |   selectivity
+-----------+--------------------------+---------------+---------------+-----------------
+       413 | relpersistence           |             1 |             1 |    0.0024213076
+       413 | relchecks                |             1 |             1 |    0.0024213076
 ```
 This query retrieves statistics for each column of the specified table (test_table), such as the number of rows (reltuples), column name (attname), correlation between columns, number of distinct values (n_distinct), and calculates the selectivity based on the ratio of distinct values to the total number of rows. The results are ordered by the absolute value of correlation to highlight the most significant relationships.
 
 
 ## Column Most Common Values and Frequencies Analysis
-This query provides statistics about columns in a table, including correlation, selectivity, and the number of distinct values.
+This query provides detailed statistics for the status column in the test_table table. It displays the most common values in the column, their respective frequencies. This information helps in understanding the distribution and relationships of values within the column.
 ```sql
-SELECT  
-    tablename, attname, most_common_vals,most_common_freqs,correlation
-FROM pg_stats
-WHERE tablename = 'test_table' 
-  AND attname = 'status';
-```
+SELECT
+    tablename,
+    attname,
+    (most_common_vals::text::text[])[idx] AS most_common_val,
+    (most_common_freqs::text::text[])[idx] AS most_common_freq
+FROM (
+    SELECT
+        tablename,
+        attname,
+        most_common_vals,
+        most_common_freqs,
+        generate_subscripts(most_common_vals, 1) AS idx
+    FROM pg_stats
+    WHERE tablename = 'test_table'
+    AND attname = 'status'
+) AS subquery;
+
 ### Output 9.2
 ```text
-          tablename          |       most_common_vals       |         most_common_freqs          | correlation
------------------------------+------------------------------+------------------------------------+-------------
- test_table                  | {published,enqueued,invalid} | {0.5240333,0.41853333,0.057433333} | -0.42097768
+    tablename  |    attname     | most_common_val | most_common_freq
+    ------------+----------------+-----------------+------------------
+    tracks     | track_type     | 1               | 0.49191666
+    tracks     | track_type     | 45              | 0.22131667
+    tracks     | track_type     | 19              | 0.10068333
+    tracks     | track_type     | 4               | 0.038886666
 ```
-This query provides detailed statistics for the status column in the hydra_channel_rabbit_events table. It displays the most common values in the column, their respective frequencies, and the correlation with other columns. This information helps in understanding the distribution and relationships of values within the column.
-
 
 ## Calculating Estimated Row Count
 To estimate the number of rows for a specific value in a column, you can use the following SQL query:
