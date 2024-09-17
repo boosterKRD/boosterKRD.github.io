@@ -183,7 +183,7 @@ ORDER BY
 
 6. Get vacuum info from PG logs
 ```bash
-grep -A 20 'vacuum of table "database.schema.table_name"' postgresql-XXX-XX-XX.log
+grep -A 20 -e 'vacuum of table "database.schema.table_name"' -e 'to prevent wraparound of table "database.schema.table_name"' postgresql-XXXX-XX-XX.log
 ```
 
 ## 7. Posts for Reading
