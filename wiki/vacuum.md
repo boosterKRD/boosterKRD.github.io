@@ -10,7 +10,8 @@ Table of Contents
 3. [Vacuum process](#3-vacuum-process)
 4. [Show oldest Xmin](#4-show-oldest-xmin)
 5. [Show active queries](#5-show-active-queries)
-6. [Posts for reading](#6-posts-for-reading)
+6. [Get vacuum info from PG logs](#6-get-vacuum-info-from-pg-logs)
+7. [Posts for reading](#7-posts-for-reading)
 
 <!--MORE-->
 -----
@@ -180,7 +181,12 @@ ORDER BY
     5 days 01:51:55.487  | active | 5 days 01:51:55.487| 5 days 01:51:55.482 | testdb   |  84 |         | f       |             |
     ```
 
-## 6. Posts for Reading
+6. Get vacuum info from PG logs
+```bash
+grep -A 20 'vacuum of table "database.schema.table_name"' postgresql-XXX-XX-XX.log
+```
+
+## 7. Posts for Reading
 Here are some great resources for understanding and tuning autovacuum in PostgreSQL:
 - [Auto Vacuum Tuning in PostgreSQL](https://medium.com/helpshift-engineering/auto-vacuum-tuning-in-postgresql-3408f8b62ad8)
 - [Tuning Autovacuum for Best Postgres Performance](https://resources.pganalyze.com/pganalyze_Tuning_autovacuum_for_best_Postgres_performance.pdf)
