@@ -1,0 +1,464 @@
+---
+layout: post
+title: RDS password rotation 
+date: 2024-09-28
+---
+
+## Introduction
+This article covers the setup of automatic password rotation for a PostgreSQL user using AWS Secrets Manager and Lambda. This process enhances security by ensuring that credentials are regularly updated without manual intervention. 
+The implementation will utilize the **Multi-User** Rotation Function, which leverages a superuser account to manage password rotations for other users. For those interested in a **single-user** approach, AWS Secrets Manager also provides a Single-User Rotation Function, but that topic falls outside the scope of this guide. 
+By the end of this article, a fully functional system for automatically rotating PostgreSQL user passwords will be in place.
+
+### Table of Contents
+- [Step 1: Create an Amazon RDS PostgreSQL Instance](#step-1-create-an-amazon-rds-postgresql-instance)  
+- [Step 2: Create a Secret in AWS Secrets Manager](#step-2-create-a-secret-in-aws-secrets-manager)  
+- [Step 3: Deploy the Rotation Lambda Function](#step-3-deploy-the-rotation-lambda-function)
+- [Step 4: Create a VPC Endpoint for AWS Secrets Manager](#step-4-create-a-vpc-endpoint-for-aws-secrets-manager)  
+- [Step 5: Enable Automatic Rotation for test_user333_secret](#step-5-enable-automatic-rotation-for-test_user333_secret)  
+- [Step 6: Create users in PostgreSQL](#step-6-create-users-in-postgresql)  
+- [Step 7: Checking Network Settings for Lambda Access](#step-7-checking-network-settings-for-lambda-access)  
+- [Step 8: Final check](#step-7-checking-network-settings-for-lambda-access)
+- [Last Step: Clean up](#last-step-clean-up)
+- [Conclusion](#conclusion)
+- [References](#references)  
+
+<!--MORE-->
+
+-----
+
+## Step 1: Create an Amazon RDS PostgreSQL Instance
+Create the RDS Instance
+
+### 1.1. Set Up Environment Variables
+First, define the variables that you’ll use throughout this step. Replace the placeholder values with your actual IDs.
+```bash
+# Replace with your actual subnet IDs within your VPC
+SUBNET_ID1="subnet-05a8a2c78756260ed"
+SUBNET_ID2="subnet-0cf57825fcf0c3cbd"
+
+# Replace with your actual VPC ID
+VPC_ID="vpc-02294c945121da772"
+
+#Set region 
+MY_REGION="eu-north-1"
+
+# (Optional) Replace with your security group ID if you have an existing one
+# If you don't have one yet, we'll create it in the next steps
+RDS_SG_ID=""
+```
+
+### 1.2. Create a DB Subnet Group (If Not Already Created)
+
+A DB subnet group is a collection of subnets that you may want to designate for your RDS instances in a VPC.
+```bash
+aws rds create-db-subnet-group \
+    --db-subnet-group-name my-db-subnet-group \
+    --db-subnet-group-description "My DB subnet group" \
+    --subnet-ids $SUBNET_ID1 $SUBNET_ID2
+```	
+
+### 1.3. Create a VPC Security Group
+
+If you don’t have a security group, create one to control inbound and outbound traffic for your RDS instance.
+```bash
+RDS_SG_ID=$(aws ec2 create-security-group \
+    --group-name my-rds-sg \
+    --description "Security group for RDS instance" \
+    --vpc-id $VPC_ID \
+    --query 'GroupId' \
+    --output text)
+
+echo "Created Security Group with ID: $RDS_SG_ID"
+```
+
+### 1.4. Modify Security Group Inbound Rules
+
+Add inbound rules to allow traffic on the PostgreSQL port (default 5432).
+```bash
+# Allow inbound PostgreSQL traffic from a specific IP
+aws ec2 authorize-security-group-ingress \
+    --group-id $RDS_SG_ID \
+    --protocol tcp \
+    --port 5432 \
+    --cidr <your-ip-address>/32
+```
+Note: Replace <your-ip-address> with your actual IP address or use 0.0.0.0/0.
+
+### 1.5. Create the RDS PostgreSQL Instance
+
+Use the following command to create your RDS instance:
+```bash
+aws rds create-db-instance \
+    --db-instance-identifier my-postgres-instance \
+    --db-instance-class db.t3.micro \
+    --engine postgres \
+    --master-username postgres \
+    --master-user-password YourMasterPasswordHere \
+    --allocated-storage 20 \
+    --vpc-security-group-ids $RDS_SG_ID \
+    --db-subnet-group-name my-db-subnet-group \
+    --backup-retention-period 7 \
+    --no-publicly-accessible \
+    --engine-version 16.4 \
+    --storage-type gp2 \
+    --auto-minor-version-upgrade \
+    --publicly-accessible \
+    --copy-tags-to-snapshot \
+    --tags Key=Name,Value=my-postgres-instance
+```
+Parameter Explanations:
+	•	--db-instance-identifier: A unique name for your RDS instance (e.g., my-postgres-instance).
+	•	--db-instance-class: The compute and memory capacity (e.g., db.t3.micro).
+	•	--engine: The database engine (postgres for PostgreSQL).
+	•	--master-username: The username for the master user (e.g., postgres).
+	•	--master-user-password: A strong password for the master user.
+	•	--allocated-storage: The amount of storage in GiB.
+	•	--vpc-security-group-ids: Your security group ID(s).
+	•	--db-subnet-group-name: The DB subnet group name created earlier.
+	•	--backup-retention-period: Number of days to retain backups.
+	•	--no-publicly-accessible: Specifies that the instance isn’t publicly accessible.
+	•	--engine-version: The PostgreSQL engine version (e.g., 16.4).
+	•	--storage-type: The storage type (e.g., gp2 for General Purpose SSD).
+	•	--auto-minor-version-upgrade: Enables automatic minor version upgrades.
+	•	--copy-tags-to-snapshot: Copies tags to snapshots.
+	•	--tags: Adds metadata tags to your instance.
+
+### 1.6. Verify the RDS Instance Creation
+
+Check the status of your RDS instance:
+```bash
+aws rds describe-db-instances \
+--db-instance-identifier my-postgres-instance --query 'DBInstances[0].DBInstanceStatus'
+# or you can use the command below (it will wait until the creation process is finished)
+aws rds wait db-instance-available --db-instance-identifier my-postgres-instance
+```
+Note: Wait until the status changes to available.
+
+### 1.7. Retrieve the Endpoint Address
+You’ll need the endpoint to connect to your database:
+```bash
+RDS_ENDPOINT=$(
+    aws rds describe-db-instances \
+    --db-instance-identifier my-postgres-instance \
+    --query 'DBInstances[0].Endpoint.Address' \
+    --output text
+)
+```
+
+----
+
+## Step 2: Create a Secret in AWS Secrets Manager
+Creating a secret for rotator_admin and test_user333 involves storing the database credentials securely in AWS Secrets Manager. The **rotator_admin** user will be used by the Lambda rotation function to manage password rotations for **test_user333**.
+
+### 2.1 Set the password you want to use for the rotator_admin user. Ensure you choose a strong password and handle it securely.  
+```bash
+ROTATOR_ADMIN_PASSWORD='XXXXX'
+TEST_USER333_PASSWORD='XXXXX'
+```
+Note: Replace 'XXXXX' with a secure password of your choice. 
+
+### 2.2 Create the Secrets in AWS Secrets Manager  
+```bash
+aws secretsmanager create-secret \
+    --name rotator_admin_secret \
+    --description "Secret for rotator_admin user" \
+    --secret-string "{\"username\":\"rotator_admin\",\"password\":\"$ROTATOR_ADMIN_PASSWORD\",\"engine\":\"postgres\",\"host\":\"$RDS_ENDPOINT\",\"port\":5432,\"dbname\":\"postgres\"}" \
+    --tags Key=Name,Value=rotator_admin_secret
+
+# Retrieve the ARN of rotator_admin_secret  
+ROTATOR_ADMIN_SECRET_ARN=$(aws secretsmanager describe-secret \
+    --secret-id rotator_admin_secret \
+    --query 'ARN' \
+    --output text)
+echo $ROTATOR_ADMIN_SECRET_ARN
+
+aws secretsmanager create-secret \
+    --name test_user333_secret \
+    --description "Secret for test_user333 with automatic rotation" \
+    --secret-string "{\"username\":\"test_user333\",\"password\":\"$TEST_USER333_PASSWORD\",\"engine\":\"postgres\",\"host\":\"$RDS_ENDPOINT\",\"port\":5432,\"dbname\":\"postgres\",\"masterarn\":\"$ROTATOR_ADMIN_SECRET_ARN\",\"dbInstanceIdentifier\":\"my-postgres-instance\"}" \
+    --tags Key=Name,Value=test_user333_secret    
+```
+Explanation of Parameters:
+	•	--name: The name of the secret (rotator_admin_secret).
+	•	--description: A description for the secret.
+	•	--secret-string: A JSON string containing the credentials and connection details.
+
+### 2.3 Confirm the Secret Creation  
+Verify that the secret has been created:
+```bash
+aws secretsmanager describe-secret --secret-id rotator_admin_secret
+aws secretsmanager describe-secret --secret-id test_user333_secret
+```	
+
+----
+
+## Step 3: Deploy the Rotation Lambda Function
+We’ll deploy the rotation Lambda function using the AWS Serverless Application Repository and AWS CloudFormation.
+
+In this guide, we are deploying the **Multi-User Rotation Function** because the test_user333 does not have permission to change their own password. Instead, the **rotator_admin** user (with appropriate privileges) will perform the rotation on behalf of **test_user333**.
+
+### 3.1 Retrieve the ARN of rotator_admin_secret  
+```bash
+ROTATOR_ADMIN_SECRET_ARN=$(aws secretsmanager describe-secret \
+    --secret-id rotator_admin_secret \
+    --query 'ARN' \
+    --output text)
+```
+
+### 3.2. Generate the CloudFormation Template URL  
+```bash
+TEMPLATE_URL=$(aws serverlessrepo create-cloud-formation-template \
+    --application-id arn:aws:serverlessrepo:us-east-1:297356227824:applications/SecretsManagerRDSPostgreSQLRotationMultiUser \
+    --semantic-version 1.1.485 \
+    --query 'TemplateUrl' \
+    --output text)
+```
+Note: Adjust the --application-id and --semantic-version if necessary.
+
+### 3.3. Deploying the Lambda Function with CloudFormation
+
+> ℹ️ **INFO:**  
+- The subnets and security groups must allow the Lambda function to communicate with both the RDS instance and AWS Secrets Manager.  
+- Incorrect configuration can lead to connectivity issues, preventing the Lambda function from performing password rotations.  
+The main rules are:  
+- Subnets (vpcSubnetIds):  
+	- Same VPC: The subnets must be in the same VPC as your RDS instance.  
+	- Private Subnets: Ideally, use private subnets that have:  
+		- Network access to your RDS instance.  
+		- Internet access through a NAT Gateway for AWS Secrets Manager calls, or a VPC Endpoint for AWS Secrets Manager (IGW does not work with Lambda).  
+	- Different Subnets: You can use different subnets from those used by the RDS instance, as long as they meet the above criteria.  
+- Security Groups (vpcSecurityGroupIds):  
+	- New Security Group: It’s recommended to create a new security group for the Lambda function to have fine-grained control.  
+	- Permissions:  
+		- Outbound Rules: Allow outbound traffic to the RDS instance on port 5432 (PostgreSQL) and to AWS Secrets Manager on port 443 (HTTPS).  
+		- Inbound Rules: Generally, Lambda functions don’t need inbound rules unless they are invoked by services within your VPC.  
+
+```bash
+aws cloudformation create-stack \
+    --stack-name pgpasslambda-stack \
+    --template-url $TEMPLATE_URL \
+    --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+    --parameters ParameterKey=functionName,ParameterValue=pgpasslambda \
+                 ParameterKey=masterSecretArn,ParameterValue=$ROTATOR_ADMIN_SECRET_ARN \
+                 ParameterKey=endpoint,ParameterValue=https://secretsmanager.$MY_REGION.amazonaws.com/ \
+                 ParameterKey=vpcSecurityGroupIds,ParameterValue=$RDS_SG_ID \
+                 ParameterKey=vpcSubnetIds,ParameterValue=$SUBNET_ID1
+```
+
+### 3.4. Wait for the Stack Creation to Complete
+```bash
+aws cloudformation wait stack-create-complete --stack-name pgpasslambda-stack
+```
+
+### 3.5. Retrieve the ARN of the Rotation Lambda Function
+```bash
+ROTATION_LAMBDA_ARN=$(aws lambda get-function \
+    --function-name pgpasslambda \
+    --query 'Configuration.FunctionArn' \
+    --output text)
+
+echo "lambda ARN:" $ROTATION_LAMBDA_ARN
+```
+
+----
+
+## Step 4: Create a VPC Endpoint for AWS Secrets Manager
+[AWS Documentation on VPC Endpoints for Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/vpc-endpoint-overview.html)
+### 4.1. Identify the Service Name for AWS Secrets Manager
+Set the service name for AWS Secrets Manager in your region:
+```bash
+SERVICE_NAME="com.amazonaws.${MY_REGION}.secretsmanager"
+```
+
+### 4.2. Create a VPC Endpoint for AWS Secrets Manager
+Use the following command to create the VPC Endpoint. This will enable your Lambda function to access AWS Secrets Manager within your VPC.
+```bash
+aws ec2 create-vpc-endpoint \
+    --vpc-id $VPC_ID \
+    --vpc-endpoint-type Interface \
+    --service-name $SERVICE_NAME \
+    --subnet-ids $SUBNET_ID1 $SUBNET_ID2 \
+    --security-group-ids $RDS_SG_ID \
+    --private-dns-enabled
+```
+Note: Ensure that the varaible VPC_ID, SUBNET_ID1, SUBNET_ID2, RDS_SG_ID and SERVICE_NAME have values 
+
+### 4.3. Update Security Group Rules
+Ensure that the security group associated with the VPC Endpoint allows inbound traffic on port 443 from the Lambda function’s security group.
+```bash
+# Allow inbound HTTPS traffic from Lambda's security group
+aws ec2 authorize-security-group-ingress \
+    --group-id $RDS_SG_ID \
+    --protocol tcp \
+    --port 443 \
+    --source-group $RDS_SG_ID
+```
+
+### 4.4. Verify the VPC Endpoint Creation
+Ensure that the VPC Endpoint is created and in the available state:
+```bash
+aws ec2 describe-vpc-endpoints \
+    --filters "Name=vpc-endpoint-type,Values=Interface" "Name=vpc-id,Values=$VPC_ID" \
+    --query 'VpcEndpoints[?ServiceName==`'$SERVICE_NAME'`].[VpcEndpointId, State]' \
+    --output table
+```
+
+----
+
+## Step 5: Enable Automatic Rotation for test_user333_secret
+### 5.1. Enable Rotation on the Secret Manager for **test_user333**
+```bash
+aws secretsmanager rotate-secret \
+    --secret-id test_user333_secret \
+    --rotation-lambda-arn $ROTATION_LAMBDA_ARN \
+    --rotation-rules AutomaticallyAfterDays=10
+```
+Explanation of Parameters:
+	•	--secret-id: The name or ARN of your secret (test_user333_secret).
+	•	--rotation-lambda-arn: The ARN of the rotation Lambda function (pgpasslambda).
+	•	--rotation-rules: Specifies the rotation schedule (every 30 days).
+
+### 5.2. Confirm Rotation Configuration
+```bash
+aws secretsmanager describe-secret --secret-id test_user333_secret
+```
+
+----
+
+## Step 6: Create users in PostgreSQL
+Now, we’ll create the necessary users (test_user333 and rotator_admin) in the PostgreSQL database via psql.
+```sql
+psql -h $RDS_ENDPOINT -W -U postgres -c "CREATE USER test_user333 WITH PASSWORD '$TEST_USER333_PASSWORD';"
+
+psql -h $RDS_ENDPOINT -W -U postgres -v pass="$ROTATOR_ADMIN_PASSWORD" -c "CREATE USER rotator_admin WITH PASSWORD '$ROTATOR_ADMIN_PASSWORD';GRANT rds_superuser TO rotator_admin;" 
+```
+----
+
+## Step 7: Checking Network Settings for Lambda Access
+Ensure that the Lambda function can access both the RDS instance and AWS Secrets Manager.
+Lambda VPC Configuration:
+	•	The Lambda function should be configured to run in the same VPC as your RDS instance.
+	•	Use private subnets that have network access to the internet via a NAT Gateway or VPC endpoints.
+	•	Create a VPC Endpoint for Secrets Manager (Optional):
+	•	Navigate to the VPC Console.
+	•	Click on Endpoints and then Create Endpoint.
+	•	Service Name: Select com.amazonaws.<region>.secretsmanager.
+	•	VPC: Choose your VPC.
+	•	Subnets: Select the subnets where your Lambda function runs.
+	•	Security Groups: Attach the appropriate security groups.
+	•	Update Lambda Function’s Security Group:
+	•	Ensure the security group allows outbound access to the RDS instance and Secrets Manager endpoint.
+
+### 7.1. Verify Lambda Function’s VPC Configuration
+Use the following AWS CLI command to check the Lambda function’s configuration:
+```bash
+aws lambda get-function-configuration \
+    --function-name pgpasslambda \
+    --query '{FunctionName:FunctionName, VpcConfig:VpcConfig}'
+```
+Notes:
+	•	Ensure that the SubnetIds and SecurityGroupIds match the values you provided during deployment.
+	•	Confirm that the VpcId corresponds to your VPC.
+
+### 7.2. Verify Security Group Rules
+Check the outbound and inbound rules of the Lambda function’s security group $RDS_SG_ID:
+```bash
+aws ec2 describe-security-groups \
+    --group-ids $RDS_SG_ID \
+    --query 'SecurityGroups[0].IpPermissionsEgress'
+
+aws ec2 describe-security-groups \
+    --group-ids $RDS_SG_ID \
+    --query 'SecurityGroups[0].IpPermissions'    
+```
+Note: Ensure that outbound and inbound traffic is allowed to the RDS instance and AWS Secrets Manager endpoints.
+
+----
+
+## Step 8: Final check 
+Manually trigger the rotation function to see if it can access the RDS instance and Secrets Manager:
+```bash
+# Check current test_user333 password 
+aws secretsmanager get-secret-value --secret-id test_user333_secret --query 'SecretString' --output text
+
+#Try to rotate user password
+aws secretsmanager rotate-secret --secret-id test_user333_secret
+
+#Monitor the CloudWatch logs for the Lambda function to check for any errors.
+LATEST_LOG_STREAM=$(aws logs describe-log-streams \
+    --log-group-name /aws/lambda/pgpasslambda \
+    --order-by LastEventTime \
+    --descending \
+    --limit 1 \
+    --query 'logStreams[0].logStreamName' \
+    --output text)
+
+aws logs get-log-events \
+    --log-group-name /aws/lambda/pgpasslambda \
+    --log-stream-name $LATEST_LOG_STREAM \
+    --limit 20 \
+    --query 'events[*].message' \
+    --output text
+
+# Check current test_user333 password again.
+aws secretsmanager get-secret-value --secret-id test_user333_secret --query 'SecretString' --output text
+```
+
+----
+
+## Last Step: Clean up
+To completely clean up and delete all the AWS resources and objects created during this RDS password rotation setup, you can use the following AWS CLI commands. 
+
+```bash
+# Delete the RDS Instance
+aws rds delete-db-instance \
+    --db-instance-identifier my-postgres-instance \
+    --skip-final-snapshot
+
+# Delete the Secrets
+aws secretsmanager delete-secret \
+    --secret-id rotator_admin_secret \
+    --force-delete-without-recovery
+
+aws secretsmanager delete-secret \
+    --secret-id test_user333_secret \
+    --force-delete-without-recovery
+
+# Delete the Lambda Function
+aws lambda delete-function --function-name pgpasslambda
+
+# Delete the VPC Endpoint
+VPC_ENDPOINT_ID=$(aws ec2 describe-vpc-endpoints \
+    --filters "Name=vpc-id,Values=$VPC_ID" \
+    --query "VpcEndpoints[?ServiceName==\`$SERVICE_NAME\`].VpcEndpointId" \
+    --output text)
+
+aws ec2 delete-vpc-endpoints --vpc-endpoint-ids $VPC_ENDPOINT_ID
+
+### Wait until the RDS instance has been deleted
+# Delete the DB Subnet Group
+aws rds delete-db-subnet-group --db-subnet-group-name my-db-subnet-group
+
+# Delete the Security Group
+aws ec2 delete-security-group --group-id $RDS_SG_ID
+
+# Remove from CloudFormation stack (removal takes about 5-10 minutes)
+aws cloudformation delete-stack --stack-name pgpasslambda-stack
+```
+
+## Conclusion
+
+We’ve successfully set up automatic password rotation for a PostgreSQL user using AWS Secrets Manager and Lambda. The test_user333 credentials stored in Secrets Manager will now automatically rotate based on the schedule, enhancing the security of your database environment. 
+Of course, you must set up password rotation for rotator_admin. For this purpose, you can deploy the [AWS Lambda template for Single-User](https://serverlessrepo.aws.amazon.com/applications/arn:aws:serverlessrepo:us-east-1:297356227824:applications~SecretsManagerRDSPostgreSQLRotationSingleUser) mode, but this topic goes beyond the scope of this post.
+
+Tips and Best Practices  
+	•	Secure Access: Always restrict security group rules to specific IP addresses or VPCs rather than using 0.0.0.0/0.  
+	•	Monitoring: Set up monitoring and alerts for your Lambda function to catch any rotation failures.  
+	•	Secrets Permissions: Ensure that the Lambda execution role has the necessary permissions to access Secrets Manager and RDS.  
+	•	Testing: Test the rotation manually to verify that everything works as expected.  
+
+## References
+- [AWS Secrets Manager Documentation](https://docs.aws.amazon.com/secretsmanager/)
+- [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda/)
+- [Amazon RDS for PostgreSQL Documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html)
+- [AWS Documentation on VPC Endpoints for Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/vpc-endpoint-overview.html)

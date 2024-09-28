@@ -16,8 +16,8 @@ More than a million INSERTs into pg_stat_statements are performed daily  (500*35
     - [Deallocating](https://github.com/postgres/postgres/blob/05ffe9398b758bbb8d30cc76e9bbc638dab2d477/src/backend/utils/hash/dynahash.c#L1301) entries (at least there's no EXCLUSIVE here)
 If I understood the source code correctly (I do not know С at all), the high frequency of new entries being written to pg_stat_statements can impact all queries to the database. This is because, before they can update data in pg_stat_statements, they will have to wait for the lock to be released (EXCLUSIVE) by those performing INSERT operations. The same issue occurs with reset_stat, but reset is done infrequently, whereas INSERT operations happen many times per second.
 
-In my example with the "kartinki" client, it essentially doesn't matter what pg_stat_statements.max is set to (they generate 2 million queries).
-However, if a client generates 7000 unique queries (more than 5000) and you set pg_stat_statements.max to 5000, it would be worse. After reaching the 5000 limit, the deallocation process starts to delete all rows  (which uses a shared lock—no problem), but new query started inserting instead of updating requiring an exclusive lock, which will be a problem.
+In my example in  test cluster, it essentially doesn't matter what pg_stat_statements.max is set to (they generate 2 million queries).
+However, if a app generates 7000 unique queries (more than 5000) and you set pg_stat_statements.max to 5000, it would be worse. After reaching the 5000 limit, the deallocation process starts to delete all rows  (which uses a shared lock—no problem), but new query started inserting instead of updating requiring an exclusive lock, which will be a problem.
 <!--MORE-->
 
 -----
