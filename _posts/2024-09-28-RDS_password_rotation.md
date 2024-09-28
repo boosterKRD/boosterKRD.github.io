@@ -1,6 +1,6 @@
 ---
 layout: post
-title: RDS password rotation 
+title: Automatic Password Rotation in RDS
 date: 2024-09-28
 ---
 
@@ -9,7 +9,11 @@ This article covers the setup of automatic password rotation for a PostgreSQL us
 The implementation will utilize the **Multi-User** Rotation Function, which leverages a superuser account to manage password rotations for other users. For those interested in a **single-user** approach, AWS Secrets Manager also provides a Single-User Rotation Function, but that topic falls outside the scope of this guide. 
 By the end of this article, a fully functional system for automatically rotating PostgreSQL user passwords will be in place.
 
+
+
+
 ### Table of Contents
+- [Architecture Overview](#architecture-overview)  
 - [Step 1: Create an Amazon RDS PostgreSQL Instance](#step-1-create-an-amazon-rds-postgresql-instance)  
 - [Step 2: Create a Secret in AWS Secrets Manager](#step-2-create-a-secret-in-aws-secrets-manager)  
 - [Step 3: Deploy the Rotation Lambda Function](#step-3-deploy-the-rotation-lambda-function)
@@ -25,6 +29,22 @@ By the end of this article, a fully functional system for automatically rotating
 <!--MORE-->
 
 -----
+
+## Architecture Overview
+<img src="/assets/posts/pwd_rotation.png" alt="Architecture Overview" width="50%">
+
+The diagram above illustrates the architecture for the automatic password rotation system implemented using AWS services. The key components of this architecture include:
+1.	**Security Group**: A security group will be created to control inbound and outbound traffic to the resources.
+2.	**DB Subnet Group**: This group will define the subnets within the VPC that the Amazon RDS instance will use.
+3.	**Amazon RDS Single Instance**: The RDS instance will host the PostgreSQL database.
+4.	**AWS Secrets Manager**: This service will securely store the credentials for the PostgreSQL user and manage the rotation of these credentials.
+5.	**AWS Lambda Function**: A Lambda function will handle the password rotation process.
+
+Password Rotation Workflow
+1.	AWS Secrets Manager will invoke (by schedule) the Lambda function for each user whose password needs to be rotated (Step 1).
+2.	The Lambda function will generate a new password and performs the fellowing actions:
+	•	Update the password for the PostgreSQL user in the database using the rotator_admin account (Step 2).
+	•	Update the newly generated password in AWS Secrets Manager (Step 3).
 
 ## Step 1: Create an Amazon RDS PostgreSQL Instance
 Create the RDS Instance
@@ -106,22 +126,22 @@ aws rds create-db-instance \
     --copy-tags-to-snapshot \
     --tags Key=Name,Value=my-postgres-instance
 ```
-Parameter Explanations:
-	•	--db-instance-identifier: A unique name for your RDS instance (e.g., my-postgres-instance).
-	•	--db-instance-class: The compute and memory capacity (e.g., db.t3.micro).
-	•	--engine: The database engine (postgres for PostgreSQL).
-	•	--master-username: The username for the master user (e.g., postgres).
-	•	--master-user-password: A strong password for the master user.
-	•	--allocated-storage: The amount of storage in GiB.
-	•	--vpc-security-group-ids: Your security group ID(s).
-	•	--db-subnet-group-name: The DB subnet group name created earlier.
-	•	--backup-retention-period: Number of days to retain backups.
-	•	--no-publicly-accessible: Specifies that the instance isn’t publicly accessible.
-	•	--engine-version: The PostgreSQL engine version (e.g., 16.4).
-	•	--storage-type: The storage type (e.g., gp2 for General Purpose SSD).
-	•	--auto-minor-version-upgrade: Enables automatic minor version upgrades.
-	•	--copy-tags-to-snapshot: Copies tags to snapshots.
-	•	--tags: Adds metadata tags to your instance.
+Parameter Explanations:  
+	--**db-instance-identifier**: A unique name for your RDS instance (e.g., my-postgres-instance).  
+	--**db-instance-class**: The compute and memory capacity (e.g., db.t3.micro).  
+	--**engine**: The database engine (postgres for PostgreSQL).  
+	--**master-username**: The username for the master user (e.g., postgres).  
+	--**master-user-password**: A strong password for the master user.  
+	--**allocated-storage**: The amount of storage in GiB.  
+	--**vpc-security-group-ids**: Your security group ID(s)  .
+	--**db-subnet-group-name**: The DB subnet group name created earlier.  
+	--**backup-retention-period**: Number of days to retain backups.  
+	--**no-publicly-accessible**: Specifies that the instance isn’t publicly accessible.  
+	--**engine-version**: The PostgreSQL engine version (e.g., 16.4).  
+	--**storage-type**: The storage type (e.g., gp2 for General Purpose SSD).  
+	--**auto-minor-version-upgrade**: Enables automatic minor version upgrades.  
+	--**copy-tags-to-snapshot**: Copies tags to snapshots.  
+	--**tags**: Adds metadata tags to your instance.  
 
 ### 1.6. Verify the RDS Instance Creation
 
@@ -456,6 +476,9 @@ Tips and Best Practices
 	•	Monitoring: Set up monitoring and alerts for your Lambda function to catch any rotation failures.  
 	•	Secrets Permissions: Ensure that the Lambda execution role has the necessary permissions to access Secrets Manager and RDS.  
 	•	Testing: Test the rotation manually to verify that everything works as expected.  
+
+> ℹ️ **INFO:**  
+This example is for educational purposes only and does not meet production security requirements. When working with production systems, the choice of a proper and secure architecture for VPC, subnets, security groups, etc., is your responsibility.
 
 ## References
 - [AWS Secrets Manager Documentation](https://docs.aws.amazon.com/secretsmanager/)
