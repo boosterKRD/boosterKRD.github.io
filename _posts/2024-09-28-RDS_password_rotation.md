@@ -31,7 +31,7 @@ By the end of this article, a fully functional system for automatically rotating
 -----
 
 ## Architecture Overview
-<img src="/assets/posts/pwd_rotation.png" alt="Architecture Overview" width="50%">
+<img src="/assets/posts/pwd_rotation.png" alt="Architecture Overview" width="20%">
 
 The diagram above illustrates the architecture for the automatic password rotation system implemented using AWS services. The key components of this architecture include:
 1.	**Security Group**: A security group will be created to control inbound and outbound traffic to the resources.
