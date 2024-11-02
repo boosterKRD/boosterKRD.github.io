@@ -14,14 +14,14 @@ PgBouncer is a lightweight connection pooler for PostgreSQL that optimizes datab
 
 PgBouncer handles connections between clients and the database server using a connection pool. The client connects to PgBouncer as if it were a regular PostgreSQL database, and then all its requests are routed through the pool of server-side connections that PgBouncer establishes and manages on its own. 
 
-The pool size, which refers to the server-side connections, is determined by the pool_size parameter. This can be set globally via default_pool_size at the database level in the [databases] section or for each user in the [users] section. For more information about these and other configuration options, refer to the [PgBouncer configuration documentation](https://www.pgbouncer.org/config.html).
+The pool size, which refers to the server-side connections, is determined by the pool_size parameter. This can be set globally via default_pool_size at the database level in the [databases] section or for each user in the [users] section. For more information about these and other configuration options, refer to the [PgBouncer configuration documentation](https://www.pgbouncer.org/config.html).  
 
-It’s important to note that pool_size is applied separately for each user, meaning each username has its own connection pool.  
-![pgbouncer_1](/assets/posts/odarix1.png)
+It’s important to note that pool_size is applied separately for each user, meaning each username has its own connection pool.   
+![pgbouncer_1](/assets/posts/odarix1.png)  
 
-One of the main tasks in administering PgBouncer is monitoring, which helps identify and fix potential issues quickly, preventing serious failures and system downtime. Setting up alerts and monitoring allows you to detect if PgBouncer is becoming a bottleneck in your database cluster, as well as identify other critical situations. 
+One of the main tasks in administering PgBouncer is monitoring, which helps identify and fix potential issues quickly, preventing serious failures and system downtime. Setting up alerts and monitoring allows you to detect if PgBouncer is becoming a bottleneck in your database cluster, as well as identify other critical situations.  
 
-The [Odarix monitoring system](https://odarix.com/) offers powerful tools for collecting data from various services, including PgBouncer. It provides visualization and analysis of metrics, enabling you to monitor PgBouncer’s performance effectively. This lets you set up alerts for critical situations and respond quickly to potential issues. 
+The [Odarix monitoring system](https://odarix.com/) offers powerful tools for collecting data from various services, including PgBouncer. It provides visualization and analysis of metrics, enabling you to monitor PgBouncer’s performance effectively. This lets you set up alerts for critical situations and respond quickly to potential issues.   
 
 ### Key PgBouncer metrics
 Here are some of the essential metrics Odarix collects and monitors for PgBouncer: 
@@ -67,27 +67,27 @@ A series of three test runs with `pgbench` using different numbers of connection
 In the first test with 15 connections, where the number of connections does not exceed the `pool_size`, you won’t see significant spikes on the graphs below. However, starting from the second test and onwards, when the number of connections exceeds the `pool_size`, you will notice sharp changes on certain graphs, indicating an overload of the connection pool. Let’s take a closer look:
 
 **1. Average query time**  
-![graph_1](/assets/posts/odarix2.png)
+![graph_1](/assets/posts/odarix2.png)  
 The graph shows that the average query time gradually increases as the number of connections grows. This increase in time is due to waiting for a free spot in the connection pool, which indicates a higher load on the pool and a drop in performance.
 
 **2. Percentage of time spent waiting**  
-![graph_2](/assets/posts/odarix3.png)
+![graph_2](/assets/posts/odarix3.png)  
 The percentage of time clients’ queries spend waiting for a free server connection sharply increases, reaching over 60% under heavy load. This negatively impacts overall performance.
 
 **3. Pool utilization peak**  
-![graph_3](/assets/posts/odarix4.png)
+![graph_3](/assets/posts/odarix4.png)  
 The graph shows that the connection pool is being used to its total capacity. This confirms that the pool is overloaded and suggests reconsidering its size.
 
 **4. Server connections by user**  
-![graph_4](/assets/posts/odarix5.png)
+![graph_4](/assets/posts/odarix5.png)  
 Although we cannot say with certainty that the maximum number of connections has been reached, the plateau on the graph may indirectly indicate that the `pool_size` limit has been reached. Additionally, it is necessary to monitor that the total sum of all server connections does not exceed the [max_connections](https://www.postgresql.org/docs/current/runtime-config-connection.html#GUC-MAX-CONNECTIONS) setting in the database.  
 
 **5. Waiting clients**  
-![graph_5](/assets/posts/odarix6.png)
+![graph_5](/assets/posts/odarix6.png)  
 The graph shows a significant increase in clients waiting for free connections as the number of connections rises to 25 and 50. This is a clear sign of connection pool overload.  
 
 **6. CPU utilization**  
-![graph_6](/assets/posts/odarix7.png)
+![graph_6](/assets/posts/odarix7.png)  
 The graph above shows that during all stages of testing, CPU usage by PgBouncer processes did not exceed 30%, indicating stable performance without CPU bottlenecks.  
 
 ### Triggers and alerts
