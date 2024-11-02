@@ -66,34 +66,34 @@ A series of three test runs with `pgbench` using different numbers of connection
 #### Test results analysis
 In the first test with 15 connections, where the number of connections does not exceed the `pool_size`, you won’t see significant spikes on the graphs below. However, starting from the second test and onwards, when the number of connections exceeds the `pool_size`, you will notice sharp changes on certain graphs, indicating an overload of the connection pool. Let’s take a closer look:
 
-**1. Average query time**
+**1. Average query time**  
 ![graph_1](/assets/posts/odarix2.png)
 The graph shows that the average query time gradually increases as the number of connections grows. This increase in time is due to waiting for a free spot in the connection pool, which indicates a higher load on the pool and a drop in performance.
 
-**2. Percentage of time spent waiting**
+**2. Percentage of time spent waiting**  
 ![graph_2](/assets/posts/odarix3.png)
 The percentage of time clients’ queries spend waiting for a free server connection sharply increases, reaching over 60% under heavy load. This negatively impacts overall performance.
 
-**3. Pool utilization peak**
+**3. Pool utilization peak**  
 ![graph_3](/assets/posts/odarix4.png)
 The graph shows that the connection pool is being used to its total capacity. This confirms that the pool is overloaded and suggests reconsidering its size.
 
-**4. Server connections by user**
+**4. Server connections by user**  
 ![graph_4](/assets/posts/odarix5.png)
-Although we cannot say with certainty that the maximum number of connections has been reached, the plateau on the graph may indirectly indicate that the `pool_size` limit has been reached. Additionally, it is necessary to monitor that the total sum of all server connections does not exceed the [max_connections](https://www.postgresql.org/docs/current/runtime-config-connection.html#GUC-MAX-CONNECTIONS) setting in the database.
+Although we cannot say with certainty that the maximum number of connections has been reached, the plateau on the graph may indirectly indicate that the `pool_size` limit has been reached. Additionally, it is necessary to monitor that the total sum of all server connections does not exceed the [max_connections](https://www.postgresql.org/docs/current/runtime-config-connection.html#GUC-MAX-CONNECTIONS) setting in the database.  
 
-**5. Waiting clients**
+**5. Waiting clients**  
 ![graph_5](/assets/posts/odarix6.png)
-The graph shows a significant increase in clients waiting for free connections as the number of connections rises to 25 and 50. This is a clear sign of connection pool overload.
+The graph shows a significant increase in clients waiting for free connections as the number of connections rises to 25 and 50. This is a clear sign of connection pool overload.  
 
-**6. CPU utilization**
+**6. CPU utilization**  
 ![graph_6](/assets/posts/odarix7.png)
-The graph above shows that during all stages of testing, CPU usage by PgBouncer processes did not exceed 30%, indicating stable performance without CPU bottlenecks.
+The graph above shows that during all stages of testing, CPU usage by PgBouncer processes did not exceed 30%, indicating stable performance without CPU bottlenecks.  
 
 ### Triggers and alerts
-To effectively monitor PgBouncer using Odarix, setting up alerts for several key metrics is essential to help prevent connection pool overloads and other critical issues. Here is a basic set of helpful alerts:
+To effectively monitor PgBouncer using Odarix, setting up alerts for several key metrics is essential to help prevent connection pool overloads and other critical issues. Here is a basic set of helpful alerts:  
 
-**1. PgbouncerMaxClientsConnections**
+**1. PgbouncerMaxClientsConnections**  
 This alert should be configured to monitor the maximum number of client connections allowed in PgBouncer. If clients exceed the allowed number, new connections won’t be possible.
 ```yaml
 expression: sum_by(source_hostname, metric(name='pgbouncer.clients.count'))
@@ -103,7 +103,7 @@ message: "[%(source_hostname)s] pgbouncer clients connection is reaching the l
 resolve_after: YYY # resolve after YYY seconds of OK
 ```
 
-**2. PgbouncerMaxServerConnections**
+**2. PgbouncerMaxServerConnections**  
 We also want to track the total number of server connections in PgBouncer relative to the max_connections setting in PostgreSQL. If this value reaches the maximum, it can lead to the inability to service new requests and result in clients waiting for available server pool connections. You can create multiple versions with different thresholds and alert levels for this specific alert, such as 70% and 90% of `max_connections`.
 ```yaml
 expression: sum_by(source_hostname, metric(name='pgbouncer.server_connections.count'))
@@ -113,7 +113,7 @@ message: "[%(source_hostname)s] pgbouncer server connection is reaching the limi
 resolve_after: YYY # resolve after YYY seconds of OK
 ```
 
-**3. PGBouncerHighClientNumWait**
+**3. PGBouncerHighClientNumWait**  
 This alert monitors the number of clients waiting for a server connection in PgBouncer. The presence of such clients may indicate potential issues with the connection pool’s capacity, which can lead to delays in processing requests.
 ```yaml
 expression: win_min(120, sum_by(source_hostname, database, user, n2z(metric(name="pgbouncer.clients.count", state="waiting"))))
@@ -123,7 +123,7 @@ message: "[%(source_hostname)s] pgbouncer waiting clients %(user)s@%(database)s 
 resolve_after: 180 # resolve after 180 seconds of OK
 ```
 
-**4. PGBouncerHighClientWaitTimePercentage**
+**4. PGBouncerHighClientWaitTimePercentage**  
 We will track the percentage of time spent waiting for a free server connection in PgBouncer. As mentioned in the previous point, a high waiting percentage indicates potential pool capacity issues. The difference is that `PGBouncerHighClientNumWait` is a current state metric type, while `PGBouncerHighClientWaitTimePercentage` is a cumulative metric type, making it more precise.
 ```yaml
 expression: win_sum(120, sum_by(source_hostname, database, counter_rate(metric(name="pgbouncer.total_wait_time")))) / win_sum(120, sum_by(source_hostname, database, counter_rate(metric(name="pgbouncer.total_query_time")))) * 100
@@ -133,7 +133,7 @@ message: "[%(source_hostname)s] pgbouncer queries on %(database)s are spending %
 resolve_after: YYY # resolve after YYY seconds of OK
 ```
 
-**5. PGBouncerHighCPUUsage**
+**5. PGBouncerHighCPUUsage**  
 This alert monitors the CPU consumption of PgBouncer processes. High CPU usage may indicate performance bottlenecks or issues with the connection pool handling, which can degrade PgBouncer’s ability to manage connections efficiently.
 ```yaml
 expression: sum_by(source_hostname, metric(name="process.cpu.*", process="pgbouncer"))/XXX # replace XXX with a number of pgbouncer processes
