@@ -8,10 +8,11 @@ Table of Contents
 1. [Database max Xid age](#1-database-max-xid-age)
 2. [Tables max Xid age](#2-tables-max-xid-age)
 3. [Vacuum process](#3-vacuum-process)
-4. [Show oldest Xmin](#4-show-oldest-xmin)
-5. [Show active queries](#5-show-active-queries)
-6. [Get vacuum info from PG logs](#6-get-vacuum-info-from-pg-logs)
-7. [Posts for reading](#7-posts-for-reading)
+4. [Show live dead tuples info](#4show-live-and-dead-tulpes-info)
+5. [Show oldest Xmin](#4-show-oldest-xmin)
+6. [Show active queries](#5-show-active-queries)
+7. [Get vacuum info from PG logs](#6-get-vacuum-info-from-pg-logs)
+8. [Posts for reading](#7-posts-for-reading)
 
 <!--MORE-->
 -----
@@ -99,7 +100,15 @@ ORDER BY dur DESC;
     55  | 15:43:13 | f    | freeze | testdb       | test2 | vacuuming indexes  | 21043  | 31043  |  542747 | 502365 |       88 |      82 |           1 | 100.0
     ```
 
-## 4. Show oldest Xmin
+## 4. Show live and dead tulpes info
+This query show number of live/dead tuples in the tables.
+```sql
+SELECT relname, last_seq_scan, n_live_tup, n_dead_tup, last_vacuum, last_autovacuum 
+FROM pg_stat_all_tables 
+WHERE relname='test_table';
+```
+
+## 5. Show oldest Xmin
 This query identifies the oldest transaction's Xmin across several processes, helping prevent Xmin wraparound.
 ```sql
 WITH bits AS (
@@ -146,7 +155,7 @@ FROM bits;
     xmin_horizon_age                      | 727
     ```
 
-## 5. Show active queries
+## 6. Show active queries
 This query shows long-running active queries in the database.
 ```sql
 SELECT 
@@ -181,12 +190,12 @@ ORDER BY
     5 days 01:51:55.487  | active | 5 days 01:51:55.487| 5 days 01:51:55.482 | testdb   |  84 |         | f       |             |
     ```
 
-## 6. Get vacuum info from PG logs
+## 7. Get vacuum info from PG logs
 ```bash
 grep -A 20 -e 'vacuum of table "database.schema.table_name"' -e 'to prevent wraparound of table "database.schema.table_name"' postgresql-XXXX-XX-XX.log
 ```
 
-## 7. Posts for Reading
+## 8. Posts for Reading
 Here are some great resources for understanding and tuning autovacuum in PostgreSQL:
 - [Auto Vacuum Tuning in PostgreSQL](https://medium.com/helpshift-engineering/auto-vacuum-tuning-in-postgresql-3408f8b62ad8)
 - [Tuning Autovacuum for Best Postgres Performance](https://resources.pganalyze.com/pganalyze_Tuning_autovacuum_for_best_Postgres_performance.pdf)
