@@ -87,14 +87,14 @@ SELECT p.pid,
        (100 * p.heap_blks_scanned / nullif(p.heap_blks_total, 0)) AS scan_pct,
        (100 * p.heap_blks_vacuumed / nullif(p.heap_blks_total, 0)) AS vac_pct,
        p.index_vacuum_count AS ind_vac_cnt,
-       round(p.num_dead_tuples * 100.0 / nullif(p.max_dead_tuples, 0), 1) AS dead_pct
+       round(p.num_dead_tuples * 100.0 / nullif(p.max_dead_tuples, 0), 1) AS max_tuple_pct
   FROM pg_stat_progress_vacuum p 
   JOIN pg_stat_activity a USING (pid) 
 ORDER BY dur DESC;
 ```
     Example Output
     ```bash
-    pid  |   dur    | wait |  mode  |  dat         |  tab  | phase              | tab_mb | ttl_mb | scan_mb | vac_mb | scan_pct | vac_pct | ind_vac_cnt | dead_pct 
+    pid  |   dur    | wait |  mode  |  dat         |  tab  | phase              | tab_mb | ttl_mb | scan_mb | vac_mb | scan_pct | vac_pct | ind_vac_cnt | max_tuple_pct 
     -----+----------+------+--------+--------------+-------+--------------------+--------+--------+---------+--------+----------+---------+-------------+---------
     55  | 15:43:13 | f    | freeze | testdb       | test2 | vacuuming indexes  | 21043  | 31043  |  542747 | 502365 |       88 |      82 |           1 | 100.0
     ```
@@ -181,7 +181,7 @@ ORDER BY
     5 days 01:51:55.487  | active | 5 days 01:51:55.487| 5 days 01:51:55.482 | testdb   |  84 |         | f       |             |
     ```
 
-6. Get vacuum info from PG logs
+## 6. Get vacuum info from PG logs
 ```bash
 grep -A 20 -e 'vacuum of table "database.schema.table_name"' -e 'to prevent wraparound of table "database.schema.table_name"' postgresql-XXXX-XX-XX.log
 ```
