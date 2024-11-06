@@ -12,7 +12,7 @@ date: 2024-08-25
    - [Additional SQL Queries for Analyzing](#additional-sql-queries-for-analyzing)
    - [Output](#output-4)
 5. [Invalid Indexes](#5-invalid-indexes)
-6. [Index Create/Reindex Progress](#6-index-create/reindex-progress)
+6. [Index Create/Reindex Progress](#6-index-create-reindex-progress)
 7. [Index Bloat Info](#7-index-bloat-info)
 8. [Reset Index Stat](#8-reset-index-stat)
 9. [Column Value Frequency Analysis](#9-column-value-frequency-analysis)  
