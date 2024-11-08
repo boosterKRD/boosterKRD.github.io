@@ -1,9 +1,9 @@
 ---
 layout: post
 title: From Backup to Integrity - Leveraging WAL-G for PostgreSQL
-date: 2024-11-10
+date: 2024-11-08
 ---
-**[Original post URL](https://dataegret.com/2024/08/handling_cancellation_request/)**
+**[Original post URL](https://dataegret.com/2024/11/from_backup_to_integrity_leveraging_wal-g_for_postgresql//)**
 
 
 A key aspect of maintaining backup integrity is understanding data checksums. Without proper checksum validation, detecting data corruption becomes virtually impossible. Therefore, we will start with The Importance of Data Checksums.
@@ -111,7 +111,7 @@ To keep your data safe, you must:
 ## Disclaimer
 It is common to see attempts to use **pg_dump** for checksum verification. The main idea behind using it is to force PostgreSQL to read the data, thereby checking the checksums. If pg_dump completes without errors, it suggests there is no corruption. However, this method has limitations due to two main issues that you should consider:
 
-    1. **Incomplete Coverage: pg_dump** may not capture all database objects (certain tables or extensions may be excluded), and if these objects are corrupted, **pg_dump** will not detect it.
+    1. **Incomplete Coverage: pg_dump** may not capture all database objects (system tables may be excluded), and if these objects are corrupted, **pg_dump** will not detect it.
 
     2. **Potential False Positives: pg_dump** reads data from the database where a page might reside in **Shared Buffer** (not dirty) and can retrieve it without issues. However, the version of that page on disk might contain corruption, which PostgreSQL will not detect, as it returns data from **Shared Buffer** without checking the checksum; checksums are verified only when reading pages from disk.
 
