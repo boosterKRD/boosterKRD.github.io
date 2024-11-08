@@ -5,7 +5,6 @@ date: 2024-11-08
 ---
 **[Original post URL](https://dataegret.com/2024/11/from_backup_to_integrity_leveraging_wal-g_for_postgresql//)**
 
-
 A key aspect of maintaining backup integrity is understanding data checksums. Without proper checksum validation, detecting data corruption becomes virtually impossible. Therefore, we will start with The Importance of Data Checksums.
 
 <!--MORE-->
@@ -87,7 +86,7 @@ Thus, with WAL-G, you can check the availability of segments based on the config
 
 ### Bug Fix in Checksum Verification
 
-Recently, a bug was discovered in WAL-G’s checksum verification system up to version v3.0.3. Files with unusual/non-standard sizes were excluded from the checksum verification, but a fix has already been prepared, and we are waiting for the new release. In future versions, the system will warn users if a potential issue is detected. Remember to update WAL-G when the new version is released to benefit from these improvements.
+Recently, a [bug was identified in WAL-G’s checksum verification system up to v3.0.3](https://github.com/wal-g/wal-g/issues/1140). Files with unusual/non-standard sizes were excluded from the checksum verification, but a fix has already been prepared, and [the upcoming latest release](https://github.com/wal-g/wal-g/releases/) will warn users of potential issues. Remember to update WAL-G when [v3.0.4](https://github.com/wal-g/wal-g/releases/tag/v3.0.4) version is is out (the pre-release is there already) to benefit from these improvements.
 
 ![integrity6](/assets/posts/integrity6.png)
 
