@@ -1,9 +1,9 @@
 ---
 layout: gallery
-title: Nature's Masterpieces
-description: A showcase of stunning landscapes from my travels, capturing the beauty of nature.
+title: PGConf.EU 2024
+description: PostgreSQL Conference Europe 2024 
 folder: /assets/photos/nature
-thumbnail: /assets/photos/nature/thumbnail.jpg
+thumbnail: /assets/photos/PGConf2024/thumbnail.jpg
 ---
 
 {% include image-gallery.html folder=page.folder %}
