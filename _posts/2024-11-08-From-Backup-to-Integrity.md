@@ -110,8 +110,8 @@ To keep your data safe, you must:
 ## Disclaimer
 It is common to see attempts to use **pg_dump** for checksum verification. The main idea behind using it is to force PostgreSQL to read the data, thereby checking the checksums. If pg_dump completes without errors, it suggests there is no corruption. However, this method has limitations due to two main issues that you should consider:
 
-    1. **Incomplete Coverage: pg_dump** may not capture all database objects (system tables may be excluded), and if these objects are corrupted, **pg_dump** will not detect it.
+1. **Incomplete Coverage: pg_dump** may not capture all database objects (system tables may be excluded), and if these objects are corrupted, **pg_dump** will not detect it.
 
-    2. **Potential False Positives: pg_dump** reads data from the database where a page might reside in **Shared Buffer** (not dirty) and can retrieve it without issues. However, the version of that page on disk might contain corruption, which PostgreSQL will not detect, as it returns data from **Shared Buffer** without checking the checksum; checksums are verified only when reading pages from disk.
+2. **Potential False Positives: pg_dump** reads data from the database where a page might reside in **Shared Buffer** (not dirty) and can retrieve it without issues. However, the version of that page on disk might contain corruption, which PostgreSQL will not detect, as it returns data from **Shared Buffer** without checking the checksum; checksums are verified only when reading pages from disk.
 
 Given these points, it is advisable to utilize specialized solutions for checksum verification, such as WAL-G. These solutions are designed to ensure comprehensive integrity checks and are optimized for lower resource consumption, helping to detect corruption more effectively than **pg_dump** alone.
