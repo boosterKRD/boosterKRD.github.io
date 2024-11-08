@@ -28,8 +28,9 @@ Although enabling checksums does add extra overhead to the database, the general
 
 However, remember that checksums are disabled by default in PostgreSQL through version 17, so you must enable them when creating a cluster. If data checksums are not enabled, PostgreSQL provides a tool called [pg_checksums](https://www.postgresql.org/docs/current/app-pgchecksums.html). This tool allows you to enable, disable, or verify checksums, but it only works when the cluster **is offline**.
 
-ℹ️ TIPS: If you have a replica in the cluster, you can reduce downtime by enabling checksums on the replica first. Then, perform the switchover and enable checksums on the old primary last.
-
+<br>
+ℹ️  TIPS: If you have a replica in the cluster, you can reduce downtime by enabling checksums on the replica first. Then, perform the switchover and enable checksums on the old primary last.
+<br>
 While enabling checksums provides a baseline for detecting corruption, additional proactive measures are necessary to ensure complete data integrity.
 
 ### Detecting Checksum Errors Proactively
