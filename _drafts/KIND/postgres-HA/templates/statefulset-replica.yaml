@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+spec:
+  serviceName: "postgres-replica-service"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: replica
+    spec:
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+
+      initContainers:
+        - name: wait-for-primary
+          image: busybox
+          # Запускаем от имени root, так как образ busybox может не иметь пользователя с UID 999
+          securityContext:
+            runAsUser: 0
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              until nc -z postgres-primary-service 5432; do
+                echo "Waiting for primary PostgreSQL to be ready...";
+                sleep 5;
+              done;
+              echo "Primary PostgreSQL is ready, proceeding with pg_basebackup.";
+          # Убираем volumeMounts из wait-for-primary
+
+        - name: init-pgbasebackup
+          image: postgres:{{ .Values.pg_ver }}
+          securityContext:
+            runAsUser: 0
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-replica-secret
+                  key: replicator-password
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              echo "Starting pg_basebackup with debug output...";
+              pg_basebackup -h postgres-primary-service -D /var/lib/postgresql/data \
+                -U replicator -W -P -X stream --checkpoint=fast --write-recovery-conf;
+              echo "pg_basebackup completed."
+              echo "Changing ownership of data directory...";
+              chown -R 999:999 /var/lib/postgresql/data;              
+              echo "Listing /var/lib/postgresql/data contents after pg_basebackup:";
+              ls -la /var/lib/postgresql/data;
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+
+        - name: check-data-dir
+          image: busybox
+          # Запускаем от имени пользователя postgres (UID 999)
+          securityContext:
+            runAsUser: 999
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              echo "Checking contents and permissions in data directory...";
+              ls -la /var/lib/postgresql/data;
+              echo "Recovery signal file permissions:";
+              ls -la /var/lib/postgresql/data/recovery.signal || echo "recovery.signal not found";
+              echo "Standby signal file permissions:";
+              ls -la /var/lib/postgresql/data/standby.signal || echo "standby.signal not found";
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+
+      containers:
+        - name: postgres
+          image: postgres:13
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: yourpassword
+          volumeMounts:
+            - name: config
+              mountPath: /etc/postgresql/postgresql.conf
+              subPath: postgresql.conf
+            - name: pghba
+              mountPath: /etc/postgresql/pg_hba.conf
+              subPath: pg_hba.conf
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          args:
+            - "-c"
+            - "config_file=/etc/postgresql/postgresql.conf"
+            - "-c"
+            - "hba_file=/etc/postgresql/pg_hba.conf"
+
+      volumes:
+        - name: config
+          configMap:
+            name: postgres-replica-config
+        - name: pghba
+          configMap:
+            name: postgres-primary-pghba
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica-service
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+    role: replica
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}

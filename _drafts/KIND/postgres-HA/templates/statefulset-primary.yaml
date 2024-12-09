@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+spec:
+  serviceName: "postgres-primary-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: primary
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:{{ .Values.pg_ver }}
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: yourpassword
+          volumeMounts:
+            - name: config
+              mountPath: /etc/postgresql/postgresql.conf  # Монтируем postgresql.conf в отдельный каталог
+              subPath: postgresql.conf
+            - name: pghba
+              mountPath: /etc/postgresql/pg_hba.conf  # Монтируем pg_hba.conf в отдельный каталог
+              subPath: pg_hba.conf
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d/  # Монтируем init-скрипт
+          args:
+            - "-c"
+            - "config_file=/etc/postgresql/postgresql.conf"  # Указываем кастомный путь для postgresql.conf
+            - "-c"
+            - "hba_file=/etc/postgresql/pg_hba.conf"  # Указываем кастомный путь для pg_hba.conf
+      volumes:
+        - name: config
+          configMap:
+            name: postgres-primary-config
+        - name: pghba
+          configMap:
+            name: postgres-primary-pghba
+        - name: init-script
+          configMap:
+            name: postgres-init-script
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary-service
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+    role: primary
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary-service
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+    role: primary
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -1,0 +1,8 @@
+pg_ver: 13
+
+storage:
+  size: 5Gi
+
+service:
+  port: 5432
+  targetPort: 5432  
