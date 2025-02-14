@@ -1,0 +1,23 @@
+title: Booster's Blog
+description: A blog hosted on GitHub Pages
+theme: jekyll-theme-hacker
+paginate: 5
+
+name: Marat Bogatyrev
+work: PostgreSQL Expert
+company: Data Egret
+avatar: https://avatars.githubusercontent.com/u/61322366?s=400&u=c2ed07a073c346e0484d52dd579c05a9c1daf923&v=4
+email: booster.ykt@gmail.com
+
+timezone: Europe/Serbia
+exclude: 
+  - "README.md"
+  - "_drafts"
+show_drafts: false
+
+collections:
+  photos:
+    output: true
+
+plugins:
+  - jekyll-feed

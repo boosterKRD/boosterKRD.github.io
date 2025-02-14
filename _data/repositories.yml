@@ -1,0 +1,12 @@
+github_users:
+  - boosterKRD
+
+repo_description_lines_max: 2
+
+github_repos:
+  - maratos-ORG/vip_patroni
+  - maratos-ORG/ai_ollama
+  - maratos-ORG/golang_test_app
+
+
+  
