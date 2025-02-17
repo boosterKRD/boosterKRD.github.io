@@ -84,8 +84,8 @@ In a nutshell, the strategy behind this update process is:
   aws rds wait db-snapshot-completed --db-instance-identifier {BLUE_instance_identifier} --db-snapshot-identifier {GREEN_snapshot_identifier} --region {cluster_region}
   ```
   This block of code handles the creation of a database snapshot for the BLUE database instance. The process involves the following steps:
-  * First command creates a new RDS snapshot of the BLUE database instance ({BLUE_instance_identifier}) with the specified snapshot identifier ({GREEN_snapshot_identifier}).
-  * Second command waits for the snapshot to be fully created and available using the aws rds wait db-snapshot-completed command. 
+  * The first command creates a new RDS snapshot of the BLUE database instance ({BLUE_instance_identifier}) with the specified snapshot identifier ({GREEN_snapshot_identifier}).
+  * The second command waits for the snapshot to be fully created and available using the aws rds wait db-snapshot-completed command. 
 
 ## **3. Modify the Database Snapshot**
   ```bash
@@ -94,8 +94,8 @@ In a nutshell, the strategy behind this update process is:
   aws rds wait db-snapshot-available --db-snapshot-identifier {GREEN_snapshot_identifier} --region {cluster_region}
   ```
   This block of code handles the modification of an existing RDS database snapshot to a new engine version. You can perform multiple snapshot modifications. For instance, upgrade to the latest minor version and then leap to the final major version.
-  * First command modifies the snapshot to the specified engine version (e.g., 16.7).
-  * Second command waits for the snapshot to be available and updated using the aws rds wait db-snapshot-available command. 
+  * The first command modifies the snapshot to the specified engine version (e.g., 16.7).
+  * The second command waits for the snapshot to be available and updated using the aws rds wait db-snapshot-available command. 
 
 ## **4. Restore the Database Snapshot**
 The following process set up a new (GREEN) instance.
@@ -115,9 +115,9 @@ The following process set up a new (GREEN) instance.
   aws rds wait db-instance-available --db-instance-identifier {GREEN_instance_identifier} --region {cluster_region}
   ```
   This block of code handles the restoration of a new database instance from a previously created and already modified snapshot. 
-  * First command restore a new RDS instance from the snapshot identified by {GREEN_snapshot_identifier}. This command includes parameters such as the instance class ({GREEN_instance_class}), parameter group ({GREEN_parameter_group}), VPC security groups ({cluster_vpc_security_group_ids}), and subnet group ({cluster_subnet_group}). It also enables IAM database authentication and ensures the instance is not publicly accessible.  
+  * The first command restore a new RDS instance from the snapshot identified by {GREEN_snapshot_identifier}. This command includes parameters such as the instance class ({GREEN_instance_class}), parameter group ({GREEN_parameter_group}), VPC security groups ({cluster_vpc_security_group_ids}), and subnet group ({cluster_subnet_group}). It also enables IAM database authentication and ensures the instance is not publicly accessible.  
   ℹ️  INFO: You should adjust the parameters to meet the requirements and needs of your cluster (the parameters above are used for demonstration purposes).  
-  * Second command waits for the new database instance to become available using the aws rds wait db-instance-available command. 
+  * The second command waits for the new database instance to become available using the aws rds wait db-instance-available command. 
 
 ## **5. Prepare the GREEN**
   ```sql
