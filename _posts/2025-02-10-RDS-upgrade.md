@@ -16,7 +16,7 @@ Though AWS is steady improving this process ,it remains not fully transparent. F
     `If Amazon RDS detects a DDL change in the blue environment, your green databases enter a state of Replication degraded ...`  
 In practice, a command like CREATE TABLE XXX IF NOT EXISTS (the schema was not changed because the table already existed) triggered no errors and allowed the switchover to start. However, during the switchover, it unexpectedly rolled back, causing brief downtime with no logs explaining why. In this case, the culprit was identified only through testing ...
 
-Considering the issues outlined above, performing a manual (self-crafted) Blue/Green deployment give you more control and allows you to bypass some restrictions.  
+Considering the issues outlined above, performing a manual (self-crafted) Blue/Green deployment gives you more control. It allows you to bypass some restrictions if you do not face basic [limitations](https://www.postgresql.org/docs/17/logical-replication-restrictions.html) that require logical replication.  
 The following guide explains a step-by-step approach to achieve minimal downtime (roughly 10–20 seconds, regardless of the database size) when updating your database. Since the process involves quite a few commands, automating these steps (e.g., with Python scripts) helps reduce the risk of human error.
 
 <!--MORE-->
