@@ -30,7 +30,7 @@ BLUE and GREEN represent two separate database environments used to minimize dow
 This approach minimizes downtime by ensuring that application traffic is switched only after GREEN is fully synchronized, maintained, and tested.  
 Rollback is also possible, as long as replication from GREEN back to BLUE is still active.  
 
-<img src="/assets/posts/aws_blue.jpg" alt="Blue/Green Deployment" width="40%">
+<img src="/assets/posts/aws_blue.jpg" alt="Blue/Green Deployment" width="35%">
 
 In a nutshell, the strategy behind this update process is:
   1.  [Prepare the BLUE Database](#1-prepare-the-blue-database)
