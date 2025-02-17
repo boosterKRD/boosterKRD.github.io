@@ -9,6 +9,7 @@ One of the most effective ways to achieve this is by using the **Blue/Green depl
 Although AWS introduced this [feature](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/blue-green-deployments.html) for PostgreSQL in December 2023, it still has some limitations that may prevent you from fully leveraging it:
  - RDS Proxy is not currently supported.
  - Instances with subscriptions can’t use it.
+ - Your database must have the last minor version 
  - You don’t get a built-in rollback option after cutover, so reverting to the old version without losing data isn’t possible.
 
 Though AWS is steady improving this process ,it remains not fully transparent. For example, although AWS [warns](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/blue-green-deployments-considerations.html) that DDL commands are not allowed:  
@@ -28,6 +29,8 @@ BLUE and GREEN represent two separate database environments used to minimize dow
  - GREEN (New Database Instance): This is a copy of the database (created from a snapshot of BLUE) where the new PostgreSQL version is applied.  
 This approach minimizes downtime by ensuring that application traffic is switched only after GREEN is fully synchronized, maintained, and tested.  
 Rollback is also possible, as long as replication from GREEN back to BLUE is still active.  
+
+<img src="/assets/posts/aws_blue.jpg" alt="Blue/Green Deployment" width="40%">
 
 In a nutshell, the strategy behind this update process is:
   1.  [Prepare the BLUE Database](#1-prepare-the-blue-database)
@@ -90,8 +93,8 @@ In a nutshell, the strategy behind this update process is:
 
   aws rds wait db-snapshot-available --db-snapshot-identifier {GREEN_snapshot_identifier} --region {cluster_region}
   ```
-  This block of code handles the modification of an existing RDS database snapshot to a new engine version
-  !* First command modifies the snapshot to the specified engine version (e.g., 16.7).
+  This block of code handles the modification of an existing RDS database snapshot to a new engine version. You can perform multiple snapshot modifications. For instance, upgrade to the latest minor version and then leap to the final major version.
+  * First command modifies the snapshot to the specified engine version (e.g., 16.7).
   * Second command waits for the snapshot to be available and updated using the aws rds wait db-snapshot-available command. 
 
 ## **4. Restore the Database Snapshot**
