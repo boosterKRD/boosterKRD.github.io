@@ -16,38 +16,30 @@ date: 2024-08-25
 ## 1.1 SQL-based: get information about tables bloat
 ```sql
 SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
-  (tblpages-est_tblpages)*bs AS extra_size,
-  CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
-    THEN 100 * (tblpages - est_tblpages)/tblpages::float
-    ELSE 0
-  END AS extra_pct, fillfactor,
+  fillfactor,
   CASE WHEN tblpages - est_tblpages_ff > 0
     THEN (tblpages-est_tblpages_ff)*bs
     ELSE 0
-  END AS bloat_size,
+  END AS table_waste,
   CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
     THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
     ELSE 0
-  END AS bloat_pct, is_na
-  -- , tpl_hdr_size, tpl_data_size, (pst).free_percent + (pst).dead_tuple_percent AS real_frag -- (DEBUG INFO)
+  END AS total_waste_percent, is_na
 FROM (
-  SELECT ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_tblpages,
-    ceil( reltuples / ( (bs-page_hdr)*fillfactor/(tpl_size*100) ) ) + ceil( toasttuples / 4 ) AS est_tblpages_ff,
-    tblpages, fillfactor, bs, tblid, schemaname, tblname, heappages, toastpages, is_na
-    -- , tpl_hdr_size, tpl_data_size, pgstattuple(tblid) AS pst -- (DEBUG INFO)
+  SELECT ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) AS est_tblpages,
+    ceil( reltuples / ( (bs-page_hdr)*fillfactor/(tpl_size*100) ) ) AS est_tblpages_ff,
+    tblpages, fillfactor, bs, tblid, schemaname, tblname, heappages, is_na
   FROM (
     SELECT
       ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
         - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
         - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
-      ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + toastpages) AS tblpages, heappages,
-      toastpages, reltuples, toasttuples, bs, page_hdr, tblid, schemaname, tblname, fillfactor, is_na
-      -- , tpl_hdr_size, tpl_data_size
+      ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages) AS tblpages, heappages,
+       reltuples, bs, page_hdr, tblid, schemaname, tblname, fillfactor, is_na
     FROM (
       SELECT
         tbl.oid AS tblid, ns.nspname AS schemaname, tbl.relname AS tblname, tbl.reltuples,
-        tbl.relpages AS heappages, coalesce(toast.relpages, 0) AS toastpages,
-        coalesce(toast.reltuples, 0) AS toasttuples,
+        tbl.relpages AS heappages, 
         coalesce(substring(
           array_to_string(tbl.reloptions, ' ')
           FROM 'fillfactor=([0-9]+)')::smallint, 100) AS fillfactor,
@@ -64,20 +56,43 @@ FROM (
         JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
         LEFT JOIN pg_stats AS s ON s.schemaname=ns.nspname
           AND s.tablename = tbl.relname AND s.inherited=false AND s.attname=att.attname
-        LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
       WHERE NOT att.attisdropped
         AND tbl.relkind in ('r','m')
-      GROUP BY 1,2,3,4,5,6,7,8,9,10
+      GROUP BY 1,2,3,4,5,6,7,8
       ORDER BY 2,3
     ) AS s
   ) AS s2
 ) AS s3
 WHERE schemaname not in ('information_schema','pg_catalog') 
--- AND tblpages*((pst).free_percent + (pst).dead_tuple_percent)::float4/100 >= 1
-ORDER BY schemaname, tblname;
+--and tblname in ('XXX')
+ORDER BY total_waste_percent DESC;
 ```
 
 ## 1.2 Pgstattuple-based: get information about tables bloat
+Find the Largest Tables and Indexes in the Selected Database
+
+```sql
+SELECT 
+    nspname,
+    relname,
+    CASE relkind
+        WHEN 'r' THEN 'Table'
+        WHEN 'i' THEN 'Index'
+        WHEN 'm' THEN 'Materialized View'
+        ELSE 'Other'
+    END AS reltype,
+    pg_size_pretty(pg_table_size(C.oid)) AS table_size,
+    pg_size_pretty(pg_indexes_size(C.oid)) AS index_size,
+    pg_size_pretty(pg_total_relation_size(C.oid)) AS total_size
+FROM pg_class C
+LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
+WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+  AND nspname !~ '^pg_toast'
+  AND relkind IN ('r', 'i', 'm')
+ORDER BY pg_total_relation_size(C.oid) DESC
+LIMIT 20;
+```
+
 If you want to check multiple tables combine their names using the pipe | symbol.  
 Example:**orders|customers|payments**
 
