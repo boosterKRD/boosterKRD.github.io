@@ -7,5 +7,4 @@ title: About me
 
 * Name : {{ site.name }}
 * Job : {{ site.work }}
-* Company : [{{ site.company }}](https://dataegret.com)
 
