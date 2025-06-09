@@ -8,3 +8,4 @@ date: 2024-08-25
 1. [Index Commands](index.md)
 2. [Vacuum Commands](vacuum.md)
 3. [Table Commands](table.md)
+4. [Linux Tuning](linux_tuning.md)
