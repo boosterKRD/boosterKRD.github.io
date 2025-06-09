@@ -13,9 +13,10 @@ date: 2024-08-25
    - [Output](#output-4)
 5. [Invalid Indexes](#5-invalid-indexes)
 6. [Index Create/Reindex Progress](#6-index-create-or-reindex-progress)
-7. [Index Bloat Info](#7-index-bloat-info)
-8. [Reset Index Stat](#8-reset-index-stat)
-9. [Column Value Frequency Analysis](#9-column-value-frequency-analysis)  
+7. [Index Bloat Info](#7-index-bloat-info-v1)
+8. [Index Bloat Info](#8-index-bloat-info-v2)
+9. [Reset Index Stat](#9-reset-index-stat)
+10. [Column Value Frequency Analysis](#10-column-value-frequency-analysis)  
    - [Column Statistics and Selectivity](#column-statistics-and-selectivity) 
    - [Column Most Common Values and Frequencies Analysis](#column-most-common-calues-and-frequencies-analysis)  
    - [Calculating Estimated Row Count](#calculating-estimated-row-сount)  
@@ -249,7 +250,7 @@ JOIN pg_stat_activity a ON p.pid = a.pid
 LEFT JOIN pg_stat_all_indexes ai on ai.relid = p.relid AND ai.indexrelid = p.index_relid;
  ```
 
-## 7. Index Bloat Info
+## 7. Index Bloat Info v1
 ```sql
 SELECT current_database() as tag_dbname, nspname as tag_schema, tblname astag_table_name, idxname  as tag_index_name, 
 quote_ident(nspname) || '.' || quote_ident(tblname) as tag_table_full_name,
@@ -347,7 +348,43 @@ where nspname not in ('information_schema','pg_catalog')
 ORDER BY bs*(relpages)::bigint  DESC  nulls last limit 200;
 ```
 
-## 8. Reset Index Stat
+## 8. Index Bloat Info v2
+```sql
+\prompt 'Find top 100 bloated indexes.\n⚠️ No mask = scan all (I/O spike).\nIndex name mask (empty = all): ' indexname
+
+with indexes as (
+    select * from pg_stat_user_indexes
+)
+select table_name,
+pg_size_pretty(table_size) as table_size,
+index_name,
+pg_size_pretty(index_size) as index_size,
+idx_scan as index_scans,
+round((free_space*100/index_size)::numeric, 1) as waste_percent,
+pg_size_pretty(free_space) as waste
+from (
+    select (case when schemaname = 'public' then format('%I', p.relname) else format('%I.%I', schemaname, p.relname) end) as table_name,
+    indexrelname as index_name,
+    (select (case when avg_leaf_density = 'NaN' then 0
+        else greatest(ceil(index_size * (1 - avg_leaf_density / (coalesce((SELECT (regexp_matches(reloptions::text, E'.*fillfactor=(\\d+).*'))[1]),'90')::real)))::bigint, 0) end)
+        from pgstatindex(p.indexrelid::regclass::text)
+    ) as free_space,
+    pg_relation_size(p.indexrelid) as index_size,
+    pg_relation_size(p.relid) as table_size,
+    idx_scan
+    from indexes p
+    join pg_class c on p.indexrelid = c.oid
+    join pg_index i on i.indexrelid = p.indexrelid
+    where pg_get_indexdef(p.indexrelid) like '%USING btree%' and
+    i.indisvalid and (c.relpersistence = 'p' or not pg_is_in_recovery()) and
+    --put your index name/mask here
+    indexrelname ~ :'indexname'
+) t
+order by free_space desc
+limit 100;
+```
+
+## 9. Reset Index Stat
 ```sql
 select pg_stat_reset_single_table_counters(indexrelid) 
 from pg_stat_all_indexes 
@@ -355,7 +392,7 @@ where indexrelname = 'INDEX_NAME';
 ```
 -----
 
-## 9. Column Value Frequency Analysis
+## 10. Column Value Frequency Analysis
 This section describes SQL queries and techniques for analyzing column value frequencies to estimate row counts for specific values in a PostgreSQL database and selectivity. This data is useful for understanding the effectiveness of both existing and newly created indexes.
 
 ## Column Statistics and Selectivity
@@ -365,15 +402,16 @@ This query provides important statistics about the columns in a table, including
 SELECT 
     cl.reltuples, attname, correlation,n_distinct,
     CASE 
-        WHEN n_distinct = -1 THEN cl.reltuples / cl.reltuples
-        ELSE n_distinct / cl.reltuples
+    WHEN n_distinct < 0 THEN abs(n_distinct) * reltuples / reltuples
+    WHEN n_distinct = -1 THEN 1.0
+    ELSE n_distinct / reltuples
     END AS selectivity
 FROM pg_stats pg_s
 JOIN pg_class cl ON pg_s.tablename = cl.relname
 WHERE tablename = 'test_table'
 ORDER BY ABS(correlation) DESC;
 ```
-### Output 9.1
+### Output 10.1
 ```text
  reltuples |         attname          |  correlation  |  n_distinct   |   selectivity
 -----------+--------------------------+---------------+---------------+-----------------
@@ -403,7 +441,7 @@ FROM (
     AND attname = 'status'
 ) AS subquery;
 
-### Output 9.2
+### Output 10.2
 ```text
     tablename  |    attname     | most_common_val | most_common_freq
     ------------+----------------+-----------------+------------------
@@ -424,7 +462,7 @@ FROM pg_class
 JOIN pg_stats s ON s.tablename = relname
 WHERE s.tablename = 'your_table_name' AND s.attname = 'your_column_name';
 ```
-### Output 9.3
+### Output 10.3
 ```text
 tablename       | column           | estimated_rows
 ----------------+------------------+-----------
