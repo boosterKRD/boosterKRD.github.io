@@ -1,7 +1,7 @@
 ---
 layout: post
-title: Useful Index Commands
-date: 2024-08-25
+title: Useful Table Commands
+date: 2025-09-09
 ---
 # Table of Contents
 
@@ -117,8 +117,8 @@ ORDER BY pg_total_relation_size(C.oid) DESC
 LIMIT 20;
 ```
 
-If you want to check multiple tables combine their names using the pipe | symbol.  
-Example:**orders|customers|payments**
+If you want to check multiple tables combine their names using the pipe \| symbol.  
+Example:**orders\|customers\|payments**
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgstattuple;

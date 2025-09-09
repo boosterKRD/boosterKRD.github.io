@@ -400,15 +400,19 @@ This query provides important statistics about the columns in a table, including
 - Correlation: In PostgreSQL, correlation refers to how closely the physical order of rows in a table matches the ordering of values in a specific column. The correlation value ranges from -1 to 1
 ```sql
 SELECT 
-    cl.reltuples, attname, correlation,n_distinct,
+    cl.reltuples,
+    attname,
+    correlation,
+    n_distinct,
     CASE 
-    WHEN n_distinct < 0 THEN abs(n_distinct) * reltuples / reltuples
-    WHEN n_distinct = -1 THEN 1.0
-    ELSE n_distinct / reltuples
+      WHEN n_distinct < 0 THEN -n_distinct
+      WHEN n_distinct = -1 THEN 1.0
+      ELSE n_distinct / NULLIF(cl.reltuples, 0)
     END AS selectivity
 FROM pg_stats pg_s
 JOIN pg_class cl ON pg_s.tablename = cl.relname
-WHERE tablename = 'test_table'
+JOIN pg_namespace n ON n.oid = cl.relnamespace AND n.nspname = pg_s.schemaname
+WHERE pg_s.schemaname = 'public' AND pg_s.tablename = 'test_table'
 ORDER BY ABS(correlation) DESC;
 ```
 ### Output 10.1
