@@ -111,34 +111,46 @@ WHERE relname='test_table';
 ## 5. Show oldest Xmin
 This query identifies the oldest transaction's Xmin across several processes, helping prevent Xmin wraparound.
 ```sql
-WITH bits AS (
- SELECT (
-     SELECT backend_xmin
-     FROM pg_stat_activity
-     ORDER BY age(backend_xmin) DESC NULLS LAST LIMIT 1
-     ) AS xmin_pg_stat_activity,
+ WITH bits AS (
+  SELECT
     (
-     SELECT xmin
-     FROM pg_replication_slots
-     ORDER BY age(xmin) DESC NULLS LAST LIMIT 1
-     ) AS xmin_pg_replication_slots,
+      SELECT backend_xmin
+      FROM pg_stat_activity
+      WHERE backend_type IS DISTINCT FROM 'walsender'
+        AND backend_type IS DISTINCT FROM 'autovacuum worker'
+      ORDER BY age(backend_xmin) DESC NULLS LAST
+      LIMIT 1
+    ) AS xmin_pg_stat_activity,
     (
-     SELECT catalog_xmin
-     FROM pg_replication_slots
-     ORDER BY age(xmin) DESC NULLS LAST LIMIT 1
-     ) AS xmin_catalog_pg_replication_slots,
+      SELECT xmin
+      FROM pg_replication_slots
+      ORDER BY age(xmin) DESC NULLS LAST
+      LIMIT 1
+    ) AS xmin_pg_replication_slots,
     (
-     SELECT TRANSACTION
-     FROM pg_prepared_xacts
-     ORDER BY age(TRANSACTION) DESC NULLS LAST LIMIT 1
-     ) AS xmin_pg_prepared_xacts
+      SELECT backend_xmin
+      FROM pg_stat_replication
+      ORDER BY age(backend_xmin) DESC NULLS LAST
+      LIMIT 1
+    ) AS xmin_pg_stat_replication,
+    (
+      SELECT transaction
+      FROM pg_prepared_xacts
+      ORDER BY age(transaction) DESC NULLS LAST
+      LIMIT 1
+    ) AS xmin_pg_prepared_xacts
 )
 SELECT *,
-    age(xmin_pg_stat_activity) AS xmin_pg_stat_activity_age,
-    age(xmin_pg_replication_slots) AS xmin_pg_replication_slots_age,
-    age(xmin_catalog_pg_replication_slots) AS xmin_catalog_pg_replication_slots_age,
-    age(xmin_pg_prepared_xacts) AS xmin_pg_prepared_xacts_age,
-    greatest(age(xmin_pg_stat_activity), age(xmin_pg_replication_slots), age(xmin_catalog_pg_replication_slots), age(xmin_pg_prepared_xacts)) AS xmin_horizon_age
+  age(xmin_pg_stat_activity) AS xmin_pg_stat_activity_age,
+  age(xmin_pg_replication_slots) AS xmin_pg_replication_slots_age,
+  age(xmin_pg_stat_replication) AS xmin_pg_stat_replication_age,
+  age(xmin_pg_prepared_xacts) AS xmin_pg_prepared_xacts_age,
+  greatest(
+    age(xmin_pg_stat_activity),
+    age(xmin_pg_replication_slots),
+    age(xmin_pg_stat_replication),
+    age(xmin_pg_prepared_xacts)
+  ) AS xmin_horizon_age
 FROM bits;
 ```
     Example Output

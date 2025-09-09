@@ -4,16 +4,40 @@ title: Useful Index Commands
 date: 2024-08-25
 ---
 # Table of Contents
-1. [Table Bloat Info](#1-table-bloat-info)
+
+1. [Table Size Info](#1-table-size-info)
+2. [Table Bloat Info](#1-table-bloat-info)
    - [SQL-based: get information about tables bloat](#11-sql-based-get-information-about-tables-bloat)
    - [Pgstattuple-based: get information about tables bloat](#12-pgstattuple-based-get-information-about-tables-bloat)
 <!--MORE-->
 
 -----
 
-## 1. Table Bloat Info
+## 1. Table Size Info
+```sql
+SELECT
+  n.nspname  AS schema_name,
+  c.relname  AS table_name,
+  pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+  pg_size_pretty(pg_relation_size(c.oid))       AS heap_size,
+  pg_size_pretty(pg_indexes_size(c.oid))        AS index_size,
+  pg_size_pretty(
+    CASE WHEN c.reltoastrelid <> 0 THEN pg_total_relation_size(c.reltoastrelid)
+    ELSE 0 END ) AS toast_size,
+  ROUND(
+    CASE WHEN pg_relation_size(c.oid) > 0 THEN (pg_total_relation_size(c.reltoastrelid)::numeric / NULLIF(pg_relation_size(c.oid),0)) * 100
+    ELSE 0 END, 1) AS toast_percent_of_heap
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'r'
+  AND n.nspname NOT IN ('pg_catalog','information_schema')
+ORDER BY pg_total_relation_size(c.oid) DESC
+LIMIT 50;
+```
 
-## 1.1 SQL-based: get information about tables bloat
+## 2. Table Bloat Info
+
+## 2.1 SQL-based: get information about tables bloat
 ```sql
 SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
   fillfactor,
@@ -68,7 +92,7 @@ WHERE schemaname not in ('information_schema','pg_catalog')
 ORDER BY total_waste_percent DESC;
 ```
 
-## 1.2 Pgstattuple-based: get information about tables bloat
+## 2.2 Pgstattuple-based: get information about tables bloat
 Find the Largest Tables and Indexes in the Selected Database
 
 ```sql
