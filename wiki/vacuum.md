@@ -89,6 +89,7 @@ SELECT p.pid,
        (100 * p.heap_blks_vacuumed / nullif(p.heap_blks_total, 0)) AS vac_pct,
        p.index_vacuum_count AS ind_vac_cnt,
        round(p.num_dead_tuples * 100.0 / nullif(p.max_dead_tuples, 0), 1) AS max_tuple_pct
+       --round(p.dead_tuple_bytes * 100.0 / nullif(p.max_dead_tuple_bytes, 0), 1) AS max_tuple_pct. --for PG17
   FROM pg_stat_progress_vacuum p 
   JOIN pg_stat_activity a USING (pid) 
 ORDER BY dur DESC;
