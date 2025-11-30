@@ -9,7 +9,7 @@ company: Data Egret
 avatar: https://avatars.githubusercontent.com/u/61322366?s=400&u=c2ed07a073c346e0484d52dd579c05a9c1daf923&v=4
 email: booster.ykt@gmail.com
 
-timezone: Europe/Serbia
+timezone: Europe/Belgrade
 exclude: 
   - "README.md"
   - "_drafts"
@@ -19,5 +19,18 @@ collections:
   photos:
     output: true
 
+url: "https://boosterkrd.github.io"
+baseurl: ""
+
 plugins:
   - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# SEO settings
+lang: en
+author: Marat Bogatyrev
+social:
+  name: Marat Bogatyrev
+  links:
+    - https://github.com/BoosterKRD
