@@ -71,8 +71,9 @@ This shows how much data is currently dirty (in page cache) and how much is in t
 egrep '^(Dirty|Writeback):' /proc/meminfo
 ```
 Output fields:
-  •	Dirty – Total dirty memory (not yet flushed).
-  •	Writeback – Memory being actively written to disk.
+
+- Dirty – Total dirty memory (not yet flushed).
+- Writeback – Memory being actively written to disk.
 
 2. Identify which processes are writing to disk
 Accumulates total disk I/O per process — helps spot heavy background writers.
@@ -88,8 +89,9 @@ You can examine detailed I/O activity for specific PostgreSQL backends (e.g. che
 cat /proc/<pid>/io
 ```
 Relevant fields:
-  •	write_bytes – Total bytes physically written to disk by this process (i.e. flushed, not just written to page cache).
-  •	cancelled_write_bytes – Bytes scheduled for write, but later skipped — e.g. if the kernel flushed them early, the file was deleted, or the process exited before writeback.
+
+- write_bytes – Total bytes physically written to disk by this process (i.e. flushed, not just written to page cache).
+- cancelled_write_bytes – Bytes scheduled for write, but later skipped — e.g. if the kernel flushed them early, the file was deleted, or the process exited before writeback.
 
 4. Compare dirty memory usage against kernel thresholds
 This command shows how close the system is to hitting the write throttling limit (vm.dirty_bytes):
@@ -98,9 +100,10 @@ This command shows how close the system is to hitting the write throttling limit
 awk '/nr_dirty / {d=$2} /nr_dirty_threshold / {t=$2} END {printf "Dirty: %d | Threshold: %d | Used: %.2f%%\n", d, t, 100*d/t}' /proc/vmstat
 ```
 Output shows:
-  •	Dirty – Number of dirty pages in memory.
-  •	Threshold – Maximum allowed before throttling starts.
-  •	Used – Percentage of threshold currently consumed.
+
+- Dirty – Number of dirty pages in memory.
+- Threshold – Maximum allowed before throttling starts.
+- Used – Percentage of threshold currently consumed.
 
 > ⚠️ If this value often gets close to 100%, it means the system is struggling to flush dirty memory fast enough. Possible actions:
 > – Lower vm.dirty_background_bytes to trigger flushing earlier

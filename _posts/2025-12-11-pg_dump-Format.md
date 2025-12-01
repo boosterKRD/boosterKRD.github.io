@@ -210,6 +210,10 @@ pg_restore -d mydb backup.dump -t specific_table
   </div>
 </div>
 
+> **Note:** Remember that our test database had a suboptimal structure for parallel operations — only 4 tables with one dominating at 11 GB. Production databases with more tables of similar sizes will see better speedups from parallel dump and restore.
+
+-----
+
 ## Conclusion
 
 For most production environments, **CUSTOM format** offers the best combination of convenience and performance — a single file with parallel restore support and built-in compression.
