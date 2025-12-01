@@ -185,17 +185,30 @@ pg_restore -d mydb backup.dump -t specific_table
 
 ## Visual Summary
 
-```mermaid
-graph TB
-    subgraph "Total Time: Dump + Restore"
-    A["🔴 TAR + gzip<br/>865 seconds<br/>(baseline)"]
-    B["🟡 CUSTOM<br/>602 seconds<br/>(30% faster)"]
-    C["🟢 DIRECTORY<br/>507 seconds<br/>(41% faster)"]
-    end
-    style A fill:#ffcdd2,stroke:#c62828,stroke-width:2px
-    style B fill:#fff9c4,stroke:#f57f17,stroke-width:2px
-    style C fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
-```
+<div style="background: #1a1a1a; padding: 20px; border-radius: 8px; margin: 20px 0;">
+  <h3 style="text-align: center; color: #b5e853; margin-bottom: 20px;">Total Time: Dump + Restore</h3>
+
+  <div style="margin-bottom: 15px;">
+    <div style="color: #fff; margin-bottom: 5px; font-weight: bold;">TAR + gzip - 865 seconds (baseline)</div>
+    <div style="background: linear-gradient(90deg, #c62828 0%, #e57373 100%); height: 40px; width: 100%; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+      14m 25s
+    </div>
+  </div>
+
+  <div style="margin-bottom: 15px;">
+    <div style="color: #fff; margin-bottom: 5px; font-weight: bold;">CUSTOM - 602 seconds (30% faster)</div>
+    <div style="background: linear-gradient(90deg, #f57f17 0%, #ffb74d 100%); height: 40px; width: 69.6%; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+      10m 02s
+    </div>
+  </div>
+
+  <div>
+    <div style="color: #fff; margin-bottom: 5px; font-weight: bold;">DIRECTORY - 507 seconds (41% faster)</div>
+    <div style="background: linear-gradient(90deg, #2e7d32 0%, #66bb6a 100%); height: 40px; width: 58.6%; border-radius: 5px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+      8m 27s
+    </div>
+  </div>
+</div>
 
 ## Conclusion
 
