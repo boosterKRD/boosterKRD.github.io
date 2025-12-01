@@ -6,7 +6,7 @@ title: About me
 <div style="text-align: center; margin-bottom: 2em;">
   <img src="{{ site.avatar }}" alt="{{ site.name }}" style="border-radius: 50%; width: 200px; height: 200px; margin-bottom: 1em;">
   <h2>{{ site.name }}</h2>
-  <p style="font-size: 1.2em; color: #b5e853;">{{ site.work }} at {{ site.company }}</p>
+  <p style="font-size: 1.2em; color: #b5e853;">{{ site.work }} </p>
 </div>
 
 ## About Me
@@ -31,7 +31,6 @@ This blog focuses on:
 
 ## Get in Touch
 
-- 📧 Email: [{{ site.email }}](mailto:{{ site.email }})
 - 💻 GitHub: [@BoosterKRD](https://github.com/BoosterKRD)
 - 📍 Location: Serbia
 
