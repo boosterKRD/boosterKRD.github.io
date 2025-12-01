@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Choosing the Right pg_dump Format
+title: PG_DUMP - Choosing the Right Format
 date: 2025-12-01
 ---
 
@@ -186,11 +186,15 @@ pg_restore -d mydb backup.dump -t specific_table
 ## Visual Summary
 
 ```mermaid
-xychart-beta
-    title "Total Time: Dump + Restore"
-    x-axis ["TAR + gzip", "CUSTOM", "DIRECTORY"]
-    y-axis "Time (seconds)" 0 --> 900
-    bar [865, 602, 507]
+graph TB
+    subgraph "Total Time: Dump + Restore"
+    A["🔴 TAR + gzip<br/>865 seconds<br/>(baseline)"]
+    B["🟡 CUSTOM<br/>602 seconds<br/>(30% faster)"]
+    C["🟢 DIRECTORY<br/>507 seconds<br/>(41% faster)"]
+    end
+    style A fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style B fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style C fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
 ```
 
 ## Conclusion
