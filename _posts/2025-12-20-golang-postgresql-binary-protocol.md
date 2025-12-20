@@ -33,7 +33,7 @@ Extended Protocol also enables prepared statements. These help reduce overhead b
 
 > 🧠 As a DBA, you can control this behavior using the `plan_cache_mode` setting, which [allows you to force](https://postgresqlco.nf/doc/en/param/plan_cache_mode/) generic or custom plan usage.
 >
-> There is a known issue with generic/custom plan selection when working with partitioned tables. The authors of [pg_mentor](https://github.com/danolivo/pg_mentor) extension are trying to solve this problem — I recommend checking it out to understand the issue in depth.
+> There is a known issue with generic/custom plan selection when working with partitioned tables. In addition, query planning can be negatively affected by data skew and uneven data distribution. The authors of [pg_mentor](https://github.com/danolivo/pg_mentor) extension are trying to address these problems — I recommend checking it out for a deeper understanding.
 
 ---
 
@@ -98,26 +98,6 @@ To verify this in practice, I measured actual bytes transferred from PostgreSQL 
 
 ---
 
-## Driver Comparison: pgx vs pq
-
-pgx uses Extended Protocol by default, fully supports binary format, and provides fine-grained control over the protocol.
-
-lib/pq uses Simple Protocol by default, but can work with Extended Protocol, including binary transfer of parameters like bytea. However, it always receives results in text format — even if the server sends binary data — which makes it less efficient when working with large volumes or complex types.
-
-| Feature | pgx | pq |
-|---------|-----|-----|
-| Default Protocol | Extended | Simple |
-| Supports Extended? | ✅ Full | ⚠️ Partial |
-| Binary Parameters | ✅ Yes | ✅ Partial (bytea, time.Time) |
-| Binary Results | ✅ Yes | ❌ No (always text) |
-| Control Over Protocol | ✅ Fine-grained | ❌ Limited |
-| AfterConnect Hook | ✅ Yes | ❌ No |
-| Use in High-Perf Apps | ✅ Recommended | ⚠️ Not optimal |
-
-> ⚠️ **Note:** pq is simple and stable, but lacks flexibility and performance optimizations like binary decoding. For large data sets or real-time systems, pgx is the better choice.
-
----
-
 ## Why Binary Format Matters in the Real World
 
 Even if a query returns just one row, using binary format can make a real difference — especially when that row has multiple non-text columns like UUID, BIGINT, TIMESTAMP, or BYTEA.
@@ -131,6 +111,49 @@ A single SELECT with 5–7 such fields in text format can easily generate 2–3 
 With binary format, pgx can deserialize values with fewer allocations and less CPU overhead — directly into native Go types.
 
 > 💡 For apps running thousands of queries per second, or handling large result sets, these savings add up quickly.
+
+---
+
+## Driver Comparison: pgx vs pq
+
+### PGX
+
+pgx [uses](https://pkg.go.dev/github.com/jackc/pgx/v5#QueryExecMode) Extended Protocol by default (`QueryExecModeCacheStatement`), fully supports binary format, and provides fine-grained control over the protocol.
+
+**pgx: Query Execution Modes**
+
+| QueryExecMode                             | Protocol | Round-Trips | Prepared | Named | Plan Cache | Short Description                                                         |
+| ----------------------------------------- | -------- | ----------- | -------- | ----- | ---------- | ------------------------------------------------------------------------- |
+| `QueryExecModeCacheStatement` *(default)* | Extended | 2 → 1       | ✅        | ✅     | ✅          | Named prepared statements; Parse+Describe first, then 1 RT (cached)       |
+| `QueryExecModeCacheDescribe`              | Extended | 2 → 1       | ⚠️        | ❌     | ❌          | Caches metadata only; Parse+Describe first, then 1 RT; no named statements|
+| `QueryExecModeDescribeExec`               | Extended | 2           | ⚠️        | ❌     | ❌          | Parse+Describe, then Bind+Execute; always 2 round-trips                   |
+| `QueryExecModeExec`                       | Extended | 1           | ❌        | ❌     | ❌          | Extended protocol with text encoding; infers param types from Go types    |
+| `QueryExecModeSimpleProtocol`             | Simple   | 1           | ❌        | ❌     | ❌          | Client-side parameter interpolation                                       |
+
+### PQ
+
+lib/pq uses the Simple Query Protocol for queries without parameters. When query parameters are present, it uses the Extended Query Protocol for parameter binding, but without exposing prepared statements or statement caching. As a result, each parameterized query incurs a full Parse → Bind → Execute cycle on the server. Query results are always received in text format, making lib/pq less efficient when working with large volumes or complex data types.
+
+**lib/pq: Query Execution Model**
+
+| Mode               | Protocol | Round-Trips | Prepared | Named | Plan Cache | Short Description                                          |
+| ------------------ | -------- | ----------- | -------- | ----- | ---------- | ---------------------------------------------------------- |
+| *(no parameters)*  | Simple   | 1           | ❌        | ❌     | ❌          | Simple Query Protocol; query and results are text-based    |
+| *(with parameters)*| Extended | 2-3         | ❌        | ❌     | ❌        | Parse → Bind → Execute every query; results are still text |
+
+### **Driver Capabilities Overview**
+
+| Feature | pgx | pq |
+|---------|-----|-----|
+| Default Protocol | Extended | Simple |
+| Supports Extended? | ✅ Full | ⚠️ Partial |
+| Binary Parameters | ✅ Yes | ✅ Partial (bytea, time.Time) |
+| Binary Results | ✅ Yes | ❌ No (always text) |
+| Control Over Protocol | ✅ Fine-grained | ❌ Limited |
+| AfterConnect Hook | ✅ Yes | ❌ No |
+| Use in High-Perf Apps | ✅ Recommended | ⚠️ Not optimal |
+
+> ⚠️ **Note:** pq is simple and stable, but lacks flexibility and performance optimizations like binary decoding. For large data sets or real-time systems, pgx is the better choice.
 
 ---
 
@@ -148,6 +171,6 @@ With binary format, pgx can deserialize values with fewer allocations and less C
 
 - **Unique queries problem.** If your workload generates thousands or tens of thousands of unique queries, prepared statements won't help — each query is parsed and planned only once anyway.
 
-- **Connection pooler compatibility.** Not all poolers work correctly with named cached statements. For example, AWS RDS Proxy doesn't support Extended Protocol at all. PgBouncer supports it (in session and transaction modes), but requires careful configuration — especially when using prepared statements.
+* **Connection pooler compatibility.** Not all poolers work correctly with Extended Protocol or named prepared statements. For example, AWS RDS Proxy doesn't support Extended Protocol at all — it will cause connection pinning or errors. PgBouncer 1.21+ supports prepared statements in transaction pooling mode. Older versions of PgBouncer require `QueryExecModeExec` or `QueryExecModeSimpleProtocol` to avoid "prepared statement does not exist" errors. Test your specific pooler configuration separately.
 
-The bottom line: Extended Protocol and binary format are powerful optimizations, but you need to understand your workload and infrastructure to get the full benefit.
+> **Extended Protocol and binary format are powerful optimizations, but you need to understand your workload and infrastructure to get the full benefit.**
