@@ -140,10 +140,10 @@ grep -E 'HugePages_Total|HugePages_Free|HugePages_Rsvd|Hugetlb' /proc/meminfo
 
 <div style="margin:-12px 0 22px;border-left:3px solid #b5e853;border-radius:0 8px 8px 0;overflow:hidden;background:#0d0d0d">
   <div style="font-family:Menlo,Consolas,monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#b5e853;padding:6px 14px;background:rgba(181,232,83,.09)">output</div>
-  <pre style="margin:0;padding:12px 14px;background:transparent;border:0;border-radius:0;color:#d5dae2;font-size:13px;line-height:1.6;overflow-x:auto">HugePages_Total:   16600        <span style="color:#8b949e"># pool reserved: 16600 × 2 MB = 32.4 GB</span>
-HugePages_Free:     1162        <span style="color:#b5e853"># 93% taken → PostgreSQL got them ✓</span>
-HugePages_Rsvd:     1074        <span style="color:#8b949e"># mapped, not yet touched (subset of Free)</span>
-Hugetlb:        33996800 kB     <span style="color:#8b949e"># 32.4 GB locked away from the rest of the OS</span></pre>
+  <pre style="margin:0;padding:12px 14px;background:transparent;border:0;border-radius:0;color:#d5dae2;font-size:13px;line-height:1.6;overflow-x:auto">HugePages_Total:   17000        <span style="color:#8b949e"># pool reserved: 17000 × 2 MB = 33.2 GB</span>
+HugePages_Free:      232        <span style="color:#b5e853"># 99% taken → PostgreSQL got them ✓</span>
+HugePages_Rsvd:       40        <span style="color:#8b949e"># mapped, not yet touched (subset of Free)</span>
+Hugetlb:        34816000 kB     <span style="color:#8b949e"># 33.2 GB locked away from the rest of the OS</span></pre>
 </div>
 
 Two ways this goes wrong. If `Total` is `0`, you never reserved a pool at all. If `Total` is large but `Free` is the same as `Total` and `Rsvd` is `0`, the pool exists and PostgreSQL simply did not take it.
@@ -153,7 +153,7 @@ Two ways this goes wrong. If `Total` is `0`, you never reserved a pool at all. I
 PostgreSQL documents [the whole procedure](https://www.postgresql.org/docs/current/kernel-resources.html#LINUX-HUGE-PAGES), but the short version is this. Since PostgreSQL 15 the server tells you exactly how many huge pages it needs — no guessing from `shared_buffers`. On a running server:
 
 ```sql
-SHOW shared_memory_size_in_huge_pages;   -- e.g. 16512
+SHOW shared_memory_size_in_huge_pages;   -- e.g. 16808
 ```
 
 This parameter is computed at startup, so `postgres -C` can read it **only while the server is shut down** — against a live instance it fails on the `postmaster.pid` lock rather than printing a value:
@@ -166,14 +166,14 @@ postgres -D /var/lib/postgresql/data -C shared_memory_size_in_huge_pages
 Reserve that many plus a small margin — but no more than you need. The pool is managed through [`vm.nr_hugepages`](https://docs.kernel.org/admin-guide/mm/hugetlbpage.html). Reserved huge pages leave the general pool entirely: they never show as free, the page cache cannot use them, and that stays true even while PostgreSQL is stopped. The setting that counts is the one applied at boot, when memory is least fragmented:
 
 ```bash
-echo 'vm.nr_hugepages = 16600' > /etc/sysctl.d/99-postgresql-hugepages.conf
+echo 'vm.nr_hugepages = 17000' > /etc/sysctl.d/99-postgresql-hugepages.conf
 ```
 
 `sysctl -w` applies the same value immediately and is useful for testing on a live machine, but it is the unreliable path: on a fragmented system the kernel hands back **fewer pages than requested, without reporting an error**. Always read back what you actually got:
 
 ```bash
-sysctl -w vm.nr_hugepages=16600
-grep HugePages_Total /proc/meminfo    # must equal 16600 — anything lower is a partial allocation
+sysctl -w vm.nr_hugepages=17000
+grep HugePages_Total /proc/meminfo    # must equal 17000 — anything lower is a partial allocation
 ```
 
 If it comes back short, memory is already too fragmented to satisfy the request at runtime. Before reaching for a reboot, give the kernel a better chance: stop PostgreSQL, drop the page cache, compact memory, then ask again. With the largest consumer gone and the cache released, the request often goes through:
@@ -182,7 +182,7 @@ If it comes back short, memory is already too fragmented to satisfy the request 
 systemctl stop postgresql
 sync; echo 3 > /proc/sys/vm/drop_caches
 echo 1 > /proc/sys/vm/compact_memory
-sysctl -w vm.nr_hugepages=16600
+sysctl -w vm.nr_hugepages=17000
 grep HugePages_Total /proc/meminfo    # check again
 ```
 

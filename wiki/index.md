@@ -48,8 +48,8 @@ SELECT
     CASE WHEN i.indisprimary THEN 'Y' ELSE 'N' END AS "primary",
     CASE WHEN i.indisunique THEN 'Y' ELSE 'N' END AS "unique",
     COALESCE(psui.idx_scan, 0) AS number_of_scans,
-    COALESCE(psui.idx_tup_fetch, 0) AS rows_fetched,
-    COALESCE(psui.idx_tup_read, 0) AS rows_returned,
+    --COALESCE(psui.idx_tup_fetch, 0) AS rows_fetched,
+    --COALESCE(psui.idx_tup_read, 0) AS rows_read,
     CASE WHEN COALESCE(psui.idx_tup_read, 0) > 0 THEN
         ROUND((COALESCE(psui.idx_tup_fetch, 0)::numeric / COALESCE(psui.idx_tup_read, 0)) * 100, 2)
     ELSE
@@ -65,8 +65,8 @@ END AS index_efficiency_percent,
         THEN ROUND(((psai.idx_blks_hit + psai.idx_blks_read)) / psui.idx_scan, 2)
         ELSE NULL
     END AS page_per_scan,  
-    psai.idx_blks_hit AS index_blks_hit,
-    psai.idx_blks_read AS index_blks_read,
+    --psai.idx_blks_hit AS index_blks_hit,
+    --psai.idx_blks_read AS index_blks_read,
     --psui.last_idx_scan AS last_idx_scan, --since PG16
     pg_get_indexdef(i.indexrelid) AS index_def    
 FROM pg_index i
