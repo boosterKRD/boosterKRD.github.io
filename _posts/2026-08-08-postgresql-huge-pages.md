@@ -95,7 +95,7 @@ Then decide:
 
 The mechanics — virtual addressing, the TLB, why a fault happens on memory that is already resident, and what a 2 MB page changes — are covered in a separate interactive explainer:
 
-**[→ Why PostgreSQL spends gigabytes on page tables](howtoworks_hugepages.html)**
+**[→ Why PostgreSQL spends gigabytes on page tables]({{ site.baseurl }}/assets/posts/howtoworks_hugepages.html)**
 
 It walks through the address translation path, the per-process page table problem, and the first-touch fault step by step, with an explorer where you can put in your own `shared_buffers` and backend count.
 
