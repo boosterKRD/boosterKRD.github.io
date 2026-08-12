@@ -41,7 +41,7 @@ That gives the **ceiling** — what it costs if every backend has read all of `s
 | 300 | 18.75 GB | 37.50 GB |
 | 600 | 37.50 GB | 75.00 GB |
 
-With 2 MB huge pages the same 32 GB needs 16,384 entries — roughly **128 KB per backend**, 512× less. That is an upper bound: on x86-64 and arm64 the kernel can share the page tables of a huge-page mapping between processes, so in practice it is often lower still.
+With 2 MB huge pages the same 32 GB needs 16,384 entries — roughly **128 KB per backend**, 512× less.
 
 > 🧠 **From production.** With `shared_buffers = 32GB` and 300–600 backends, total page-table memory typically lands in the **10–20 GB** range, well below the ceiling above. With 2 MB pages that same fleet needs **75 MB total at 600 backends**.
 >

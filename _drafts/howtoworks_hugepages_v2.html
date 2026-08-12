@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why PostgreSQL spends gigabytes on page tables — and how huge pages fix it</title>
+<meta name="description" content="An interactive, animated explainer of address translation in PostgreSQL: why every backend keeps its own page table, why the same physical page faults once per process, and what 2 MB huge pages actually change.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0d1226; --ink2:#151d38; --ink3:#1e2950; --line:#2b3866; --line2:#3b4a80;
+  --text:#dbe1f5; --dim:#8e99c4; --faint:#5d6894;
+  --mem:#3ecfb2; --be:#5aa9ff; --miss:#ff5f7e; --pt:#ffd166;
+  --huge:#a97bff; --ok:#7ee787; --warn:#ffab3d;
+  --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--ink); color:var(--text);
+  font-family:var(--body); font-size:17px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(1100px 600px at 12% -8%, rgba(255,209,102,.09), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(169,123,255,.10), transparent 62%);
+  background-attachment:fixed;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.12;letter-spacing:-.02em;margin:0}
+p{margin:0 0 1em}
+a{color:var(--mem)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+code{background:rgba(255,255,255,.06);padding:.12em .38em;border-radius:5px;color:#e9eefc}
+
+nav{position:sticky;top:0;z-index:60;background:rgba(13,18,38,.82);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:18px;height:56px}
+nav .brand{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap}
+nav .brand span{color:var(--pt)}
+nav ol{display:flex;gap:2px;list-style:none;margin:0;padding:0;overflow-x:auto;scrollbar-width:none}
+nav ol::-webkit-scrollbar{display:none}
+nav a{font-family:var(--mono);font-size:12px;color:var(--dim);text-decoration:none;padding:6px 9px;border-radius:8px;white-space:nowrap}
+nav a:hover{color:var(--text);background:var(--ink3)}
+nav a.on{color:var(--ink);background:var(--pt);font-weight:600}
+
+header{padding:70px 0 40px;position:relative}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--pt);margin-bottom:16px}
+h1{font-size:clamp(38px,6.4vw,68px)}
+h1 em{font-style:normal;color:var(--pt)}
+.lede{font-size:clamp(18px,2.2vw,21px);color:var(--dim);max-width:64ch;margin-top:22px}
+.lede strong{color:var(--text);font-weight:600}
+.herostage{margin:38px 0 8px;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--ink2),rgba(21,29,56,.4));padding:8px 8px 4px;overflow:hidden}
+.credits{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;font-family:var(--mono);font-size:12.5px}
+.credits a{display:inline-flex;align-items:center;gap:7px;color:var(--dim);text-decoration:none;border:1px solid var(--line);
+  border-radius:999px;padding:6px 13px;transition:.18s}
+.credits a:hover{border-color:var(--mem);color:var(--text)}
+.credits a.main{border-color:var(--mem);color:var(--text)}
+
+section{padding:64px 0;border-top:1px solid var(--line)}
+.snum{font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:.16em;margin-bottom:12px}
+h2{font-size:clamp(27px,3.6vw,38px);margin-bottom:16px}
+h2 .tint{color:var(--pt)}
+.sub{color:var(--dim);max-width:68ch;font-size:17.5px}
+h3{font-size:19px;margin:34px 0 10px}
+
+.panel{border:1px solid var(--line);border-radius:var(--r);background:var(--ink2);margin-top:26px;overflow:hidden}
+.panel .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+.panel .bar .ttl{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:auto}
+.stage{padding:6px 10px 10px;position:relative}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.narr{border-top:1px solid var(--line);padding:14px 16px;min-height:74px;background:rgba(0,0,0,.16);
+  font-size:15.5px;color:var(--dim)}
+.narr b{color:var(--text);font-weight:600}
+.narr .tag{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--warn);display:block;margin-bottom:4px}
+
+button{font-family:var(--body);font-size:14px;font-weight:500;color:var(--text);background:var(--ink3);
+  border:1px solid var(--line2);border-radius:9px;padding:7px 14px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--mem);color:#fff}
+button:active{transform:translateY(1px)}
+button.pri{background:var(--pt);color:#2a2000;border-color:var(--pt);font-weight:600}
+button.pri:hover{background:#ffdd8a}
+button:disabled{opacity:.35;cursor:not-allowed}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--pt);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:transparent;padding:7px 13px}
+.seg button.on{background:var(--ink3);color:#fff;box-shadow:inset 0 -2px 0 var(--pt)}
+.spacer{flex:1}
+
+.pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;font-weight:500;
+  border-radius:999px;padding:3px 11px;border:1px solid currentColor;white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:2px;background:currentColor;display:block}
+.c-mem{color:var(--mem)} .c-be{color:var(--be)} .c-miss{color:var(--miss)}
+.c-pt{color:var(--pt)} .c-huge{color:var(--huge)} .c-ok{color:var(--ok)}
+.legend{display:flex;flex-wrap:wrap;gap:9px;padding:12px 14px;border-top:1px solid var(--line);background:rgba(0,0,0,.12)}
+
+.note{border-left:3px solid var(--warn);background:rgba(255,171,61,.07);padding:14px 18px;border-radius:0 10px 10px 0;
+  margin:24px 0;font-size:16px;color:var(--dim)}
+.note b{color:var(--warn)}
+.note.info{border-left-color:var(--be);background:rgba(90,169,255,.07)}
+.note.info b{color:var(--be)}
+.note.good{border-left-color:var(--ok);background:rgba(126,231,135,.07)}
+.note.good b{color:var(--ok)}
+.note.bad{border-left-color:var(--miss);background:rgba(255,95,126,.07)}
+.note.bad b{color:var(--miss)}
+.note :last-child{margin-bottom:0}
+
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+@media(max-width:820px){.grid3,.grid4{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);border-radius:12px;padding:18px;background:var(--ink2)}
+.card h4{font-family:var(--display);font-size:16px;margin:0 0 8px}
+.card p{font-size:15px;color:var(--dim);margin:0}
+.card.step h4{font-size:14.5px;color:var(--miss)}
+.card.step .n{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--faint);display:block;margin-bottom:6px}
+.card.step p{font-size:14px}
+
+pre{font-family:var(--mono);font-size:13px;line-height:1.6;background:#080c1c;border:1px solid var(--line);
+  border-radius:10px;padding:14px 16px;overflow-x:auto;color:#c3ccec;margin:16px 0}
+pre .k{color:var(--warn)} pre .c{color:var(--faint)} pre .s{color:var(--mem)} pre .h{color:var(--pt)}
+.termbox{margin:18px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#080c1c}
+.termbox .hd{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--pt);
+  padding:7px 15px;background:rgba(255,209,102,.07);border-bottom:1px solid var(--line)}
+.termbox pre{margin:0;border:0;border-radius:0;background:transparent}
+
+table.kv{width:100%;border-collapse:collapse;margin-top:20px;font-size:15px}
+table.kv td,table.kv th{border-bottom:1px solid var(--line);padding:11px 10px;text-align:left;vertical-align:top}
+table.kv th{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:500}
+table.kv td:first-child{white-space:nowrap}
+table.kv td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+
+/* --- explorer controls --- */
+.ctl{display:grid;grid-template-columns:150px 1fr 120px;gap:14px;align-items:center;padding:14px 16px;
+  border-bottom:1px solid var(--line)}
+.ctl label{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.ctl output{font-family:var(--mono);font-size:15px;color:var(--text);text-align:right;font-weight:600}
+input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
+@media(max-width:620px){.ctl{grid-template-columns:1fr;gap:6px}.ctl output{text-align:left}}
+.readout{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:620px){.readout{grid-template-columns:1fr}}
+.ro{padding:18px 16px;border-top:1px solid var(--line)}
+.ro:first-child{border-right:1px solid var(--line)}
+.ro .k{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.ro .v{font-family:var(--display);font-size:clamp(26px,4.6vw,40px);font-weight:700;line-height:1.15;margin-top:4px}
+.ro .d{font-family:var(--mono);font-size:12.5px;color:var(--dim);margin-top:5px}
+.ro.a .v{color:var(--miss)} .ro.b .v{color:var(--ok)}
+
+.lbl{font-family:var(--mono);font-size:11px;fill:var(--faint)}
+.lbl2{font-family:var(--mono);font-size:12.5px;font-weight:600}
+.ttx{font-family:var(--display);font-size:13px;font-weight:700}
+.node{transition:opacity .4s}
+.nbox{transition:fill .5s,stroke .5s,opacity .5s}
+.flow{transition:opacity .45s,stroke .45s}
+.tok{transition:transform .6s cubic-bezier(.45,.05,.2,1),opacity .4s}
+.gr{transition:width .5s cubic-bezier(.45,.05,.2,1),x .5s,opacity .4s}
+.blip{animation:blip .9s ease-out}
+@keyframes blip{0%{transform:scale(1)}35%{transform:scale(1.05)}100%{transform:scale(1)}}
+@media(max-width:760px){
+  .stage{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .stage>div{min-width:680px}
+  .herostage{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .herostage>div{min-width:640px}
+  h1{font-size:38px}
+  body{font-size:16px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand">PAGE<span>_TABLES</span></div>
+    <ol>
+      <li><a href="#cost">01 The cost</a></li>
+      <li><a href="#lookup">02 The lookup</a></li>
+      <li><a href="#processes">03 Per-process</a></li>
+      <li><a href="#firsttouch">04 First touch</a></li>
+      <li><a href="#explorer">05 Explorer</a></li>
+      <li><a href="#huge">06 Huge pages</a></li>
+      <li><a href="#pooler">07 Poolers</a></li>
+      <li><a href="#recap">08 Recap</a></li>
+    </ol>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">PostgreSQL · virtual memory · TLB · huge pages</div>
+    <h1>Your database owns 32&nbsp;GB.<br>It is describing it <em>600 times over.</em></h1>
+    <p class="lede">Every PostgreSQL backend is a separate process. Every process keeps its <b>own private page table</b> to describe the same <code>shared_buffers</code>. Six hundred backends means six hundred copies of that description. Nothing is shared, each copy is built from zero, and all of them use real RAM. <strong>This page shows where that memory goes, and what a 2 MB page changes.</strong></p>
+
+    <div class="herostage"><div id="hero"></div></div>
+
+    <div class="credits">
+      <a class="main" href="/2026/07/28/postgresql-huge-pages.html">← Back to the post: Huge Pages in PostgreSQL</a>
+      <a href="https://www.postgresql.org/docs/current/runtime-config-resource.html" target="_blank" rel="noopener">Postgres: huge_pages</a>
+      <a href="https://docs.kernel.org/admin-guide/mm/hugetlbpage.html" target="_blank" rel="noopener">Kernel: HugeTLB</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 01 THE COST ============ -->
+<section id="cost">
+  <div class="wrap">
+    <div class="snum">01 — THE COST</div>
+    <h2>A page table is <span class="tint">memory spent describing memory</span></h2>
+    <p class="sub">Your program never uses a physical memory address. It uses <b>virtual</b> addresses, and something has to translate them. That something is the page table. It lives in RAM and holds one entry for every 4 KB page the process has touched. Each entry is small — only 8 bytes. But a 32 GB <code>shared_buffers</code> has <b>8,388,608</b> pages, so the numbers grow fast.</p>
+
+    <div class="grid3">
+      <div class="card"><h4>4 KB at a time</h4><p>The default page size on x86-64. Linux maps and faults memory in units of 4 KB. Nothing smaller, and by default nothing larger.</p></div>
+      <div class="card"><h4>8 bytes per entry</h4><p>Each page needs one entry. It says where the page really is and what you may do with it. 8.4M entries × 8 B = <b>64 MB</b> to describe 32 GB.</p></div>
+      <div class="card"><h4>Once per process</h4><p>This is the part that hurts. The database does not pay 64 MB once. <b>Every backend pays it separately.</b></p></div>
+    </div>
+
+    <h3>You can check this on your own server</h3>
+    <p class="sub">Two numbers show all of this on any running server, and you do not need root to read them. <code>PageTables</code> in <code>/proc/meminfo</code> is the total for the whole system. <code>VmPTE</code> in <code>/proc/&lt;pid&gt;/status</code> is the part that belongs to one process.</p>
+
+    <div class="termbox">
+      <div class="hd">every postgres process on one production box</div>
+<pre><span class="c">$</span> awk <span class="s">'/VmPTE/ {t += $2; n++} END {if (n) printf "processes: %d\ntotal:     %.1f MB\nper proc:  %.1f MB\n", n, t/1024, t/n/1024}'</span> \
+      $(pgrep -x postgres | sed <span class="s">'s|.*|/proc/&/status|'</span>)
+
+<span class="h">processes: 602</span>
+<span class="h">total:     18662.0 MB</span>
+<span class="h">per proc:  31.0 MB</span></pre>
+    </div>
+
+    <div class="note info"><b>Ceiling and reality are not the same thing.</b> 64 MB per backend is the <i>ceiling</i>. That is what a backend costs after it has read all 32 GB. A page table only creates entries for pages the process has really touched, so a real backend stays below that number. Two things decide how far below: <b>how long the backend has been running</b> and <b>how much of the pool its queries reach</b>. Time matters more. A backend that only reads a few small tables does stay cheap, but that is rare. Most workloads touch enough of <code>shared_buffers</code> that after a few days the backend gets close to the ceiling anyway. The server above is real: 602 processes at 31 MB each, about half the ceiling, and still <b>18.2 GB of RAM used to describe memory the server already owns</b>. Every number on this page is a ceiling. Your own number will be lower, and that is the number that decides if this work is worth it.</div>
+  </div>
+</section>
+
+<!-- ============ 02 THE LOOKUP ============ -->
+<section id="lookup">
+  <div class="wrap">
+    <div class="snum">02 — THE LOOKUP</div>
+    <h2>Every memory access starts with <span class="tint">a translation</span></h2>
+    <p class="sub">The CPU keeps recent translations in the <b>TLB</b>, a small and very fast hardware table. A hit costs almost nothing. On a miss the CPU has to walk a tree in memory. Each read depends on the one before it, and only then can your real memory access start. Step through both cases.</p>
+
+    <div class="panel">
+      <div class="bar">
+        <span class="ttl">Step <span id="lk-n" class="mono">1</span> of 5</span>
+        <button id="lk-prev">Back</button>
+        <button id="lk-next" class="pri">Next step</button>
+        <button id="lk-play">Play</button>
+        <div class="spacer"></div>
+        <button id="lk-rst">Reset</button>
+      </div>
+      <div class="stage"><div id="lksvg"></div></div>
+      <div class="narr" id="lk-narr"></div>
+      <div class="legend">
+        <span class="pill c-be"><i></i>TLB — hardware cache of translations</span>
+        <span class="pill c-miss"><i></i>PAGE WALK — one read after another</span>
+        <span class="pill c-mem"><i></i>PHYSICAL ADDRESS</span>
+      </div>
+    </div>
+
+    <div class="note"><b>TLB reach is the number that matters.</b> A core holds about 1500–2000 second-level TLB entries. With 4 KB pages they cover <b>8 MB</b> of memory at one time. With 2 MB pages the same entries cover <b>4 GB</b>. A backend that scans a 32 GB <code>shared_buffers</code> goes past 8 MB all the time. It goes past 4 GB much less often.</div>
+
+  </div>
+</section>
+
+<!-- ============ 03 PER-PROCESS ============ -->
+<section id="processes">
+  <div class="wrap">
+    <div class="snum">03 — THE ROOT CAUSE</div>
+    <h2>PostgreSQL forks. <span class="tint">Page tables do not merge.</span></h2>
+    <p class="sub">A backend is a process, not a thread. They all map the same physical <code>shared_buffers</code>, but each one keeps its own private page table to describe it. Watch what happens when a second backend touches a page that the first one has already faulted in.</p>
+
+    <div class="panel">
+      <div class="bar">
+        <span class="ttl">Step <span id="pm-n" class="mono">1</span> of 5</span>
+        <button id="pm-prev">Back</button>
+        <button id="pm-next" class="pri">Next step</button>
+        <button id="pm-play">Play</button>
+        <div class="spacer"></div>
+        <button id="pm-rst">Reset</button>
+      </div>
+      <div class="stage"><div id="pmsvg"></div></div>
+      <div class="narr" id="pm-narr"></div>
+      <div class="legend">
+        <span class="pill c-be"><i></i>BACKEND — one OS process</span>
+        <span class="pill c-pt"><i></i>PAGE TABLE — private, up to 64 MB</span>
+        <span class="pill c-mem"><i></i>SHARED_BUFFERS — one physical copy</span>
+        <span class="pill c-miss"><i></i>MINOR FAULT</span>
+      </div>
+    </div>
+
+    <div class="note"><b>A thread-based engine does not have this problem.</b> One address space means one page table for all workers. The PostgreSQL process model turns a fixed cost into a cost that you multiply by your connection count. That is also why a connection pooler helps, even if you never turn on huge pages.</div>
+
+  </div>
+</section>
+
+<!-- ============ 04 FIRST TOUCH ============ -->
+<section id="firsttouch">
+  <div class="wrap">
+    <div class="snum">04 — FIRST TOUCH</div>
+    <h2>The fault that <span class="tint">has nothing to do with disk</span></h2>
+    <p class="sub">When a backend touches a buffer for the first time, it takes a page fault, even though the data is already in RAM. Nothing is read from disk. The kernel just fills in the missing entry in <b>that process's</b> table and lets the instruction run again. One fault is cheap. The total is not: about <b>84 million</b> faults to fully warm ten backends against a 32 GB <code>shared_buffers</code>.</p>
+
+    <div class="panel">
+      <div class="bar">
+        <span class="ttl">Step <span id="ft-n" class="mono">1</span> of 5</span>
+        <button id="ft-prev">Back</button>
+        <button id="ft-next" class="pri">Next step</button>
+        <button id="ft-play">Play</button>
+        <div class="spacer"></div>
+        <button id="ft-rst">Reset</button>
+      </div>
+      <div class="stage"><div id="ftsvg"></div></div>
+      <div class="narr" id="ft-narr"></div>
+    </div>
+
+    <div class="note info"><b>Minor, not major.</b> A <i>major</i> fault reads from disk. A <i>minor</i> fault only fixes the page table, because the physical page is already there. That is why this cost is so easy to miss. There is no I/O wait to look at and no slow query to blame. There is only CPU time that goes into the kernel, a few microseconds at a time.</div>
+
+    <h3>When first touch became a real problem</h3>
+    <p class="sub">In normal work this is not painful: once a backend is warm, it stops faulting. The dangerous moment is when <code>shared_buffers</code> is <b>empty and still filling up</b>, because then <i>every</i> access is a first touch. In 2026 a scheduler change in Linux 7.0 turned that moment into a real outage on servers with a large pool and huge pages off. PostgreSQL became about <b>two times slower</b>. Read the chain below slowly, because no single step in it looks like a problem.</p>
+
+    <div class="grid4">
+      <div class="card step"><span class="n">01</span><h4>Empty pool</h4><p>A large <code>shared_buffers</code> with nothing in it yet. Every buffer the backend asks for is a first touch, so the fault rate is as high as it will ever be.</p></div>
+      <div class="card step"><span class="n">02</span><h4>Fault under a spinlock</h4><p>The backend holds a buffer-allocation spinlock when the minor fault happens. Normally this does not matter. The fault takes microseconds, then the lock is free again.</p></div>
+      <div class="card step"><span class="n">03</span><h4>Preempted mid-fault</h4><p>After the scheduler change, the kernel can stop the backend inside the fault, while it still holds the spinlock. Now a process that is not running holds the lock.</p></div>
+      <div class="card step"><span class="n">04</span><h4>Everyone spins</h4><p>A spinlock does not sleep. Every other backend that needs a buffer burns CPU while it waits for a process that is not running. Throughput drops by half.</p></div>
+    </div>
+
+    <div class="note bad"><b>Huge pages removed the fuel, and the problem went away.</b> <code>huge_pages = on</code> did not fix the lock or the scheduler. There were simply 512× fewer first-touch faults, so there were 512× fewer chances to be unlucky inside one. This is the shape of the whole optimisation. It does not make one operation faster. It removes a very large number of small events, and it takes away the risk that lives inside them. <a href="https://read.thecoder.cafe/p/linux-broke-postgresql" target="_blank" rel="noopener">The full write-up of the incident →</a></div>
+  </div>
+</section>
+
+<!-- ============ 05 EXPLORER ============ -->
+<section id="explorer">
+  <div class="wrap">
+    <div class="snum">05 — THE EXPLORER</div>
+    <h2>Put in <span class="tint">your own numbers</span></h2>
+    <p class="sub">This is simple maths: <code>shared_buffers ÷ page_size × 8 bytes × backends</code>. Move the sliders to your production settings to see the ceiling for both page sizes. Then run the <code>VmPTE</code> command from section 01 and compare the left number with your real server.</p>
+
+    <div class="panel">
+      <div class="ctl">
+        <label for="ex-sb">shared_buffers</label>
+        <input type="range" id="ex-sb" min="1" max="256" step="1" value="32">
+        <output id="ex-sb-o">32 GB</output>
+      </div>
+      <div class="ctl">
+        <label for="ex-be">backends</label>
+        <input type="range" id="ex-be" min="1" max="1000" step="1" value="300">
+        <output id="ex-be-o">300</output>
+      </div>
+      <div class="stage"><div id="exsvg"></div></div>
+      <div class="readout">
+        <div class="ro a">
+          <div class="k">4 KB pages — page-table ceiling</div>
+          <div class="v" id="ex-v4">—</div>
+          <div class="d" id="ex-d4">—</div>
+        </div>
+        <div class="ro b">
+          <div class="k">2 MB huge pages — page-table ceiling</div>
+          <div class="v" id="ex-v2">—</div>
+          <div class="d" id="ex-d2">—</div>
+        </div>
+      </div>
+      <div class="narr" id="ex-narr"></div>
+    </div>
+
+    <div class="note"><b>Real systems stay below this ceiling.</b> The explorer assumes that every backend has read the whole pool. In practice a backend only creates entries for the pages it has really touched, so its page table grows with everything it has read <i>since it started</i>. The main factor is time. A backend that does not live long stays small. One that has been open for days gets close to the ceiling. The only real exception is a backend that always queries the same few small tables — that one stays cheap however long it runs. So read this chart as an upper limit, and take your real numbers from the <code>VmPTE</code> command in section 01.</div>
+  </div>
+</section>
+
+<!-- ============ 06 HUGE PAGES ============ -->
+<section id="huge">
+  <div class="wrap">
+    <div class="snum">06 — THE FIX</div>
+    <h2>One entry for 2 MB instead of <span class="tint">512 entries</span></h2>
+    <p class="sub">A huge page is not a different kind of memory. It is the same RAM, described in bigger units. The page table now stops one level earlier, because one entry covers 2 MB directly. The last level disappears completely, and with it 511 of every 512 entries and 511 of every 512 faults.</p>
+
+    <div class="panel">
+      <div class="bar">
+        <span class="ttl">Page size</span>
+        <div class="seg">
+          <button id="hp-4k" class="on">4 KB</button>
+          <button id="hp-2m">2 MB</button>
+        </div>
+        <div class="spacer"></div>
+      </div>
+      <div class="stage"><div id="hpsvg"></div></div>
+      <div class="narr" id="hp-narr"></div>
+      <div class="legend">
+        <span class="pill c-pt"><i></i>PAGE-TABLE LEVEL</span>
+        <span class="pill c-huge"><i></i>2 MB HUGE PAGE — last level removed</span>
+        <span class="pill c-mem"><i></i>SAME PHYSICAL MEMORY</span>
+      </div>
+    </div>
+
+    <div class="tblwrap">
+    <table class="kv">
+      <tr><th>For 32 GB of shared_buffers</th><th class="num">4 KB pages</th><th class="num">2 MB huge pages</th></tr>
+      <tr><td>Entries needed</td><td class="num">8,388,608</td><td class="num">16,384</td></tr>
+      <tr><td>Page table, per backend</td><td class="num">64 MB</td><td class="num">128 KB</td></tr>
+      <tr><td>Faults to fully warm one backend</td><td class="num">8,388,608</td><td class="num">16,384</td></tr>
+      <tr><td>TLB reach (2048 entries)</td><td class="num">8 MB</td><td class="num">4 GB</td></tr>
+      <tr><td>Ceiling at 300 backends</td><td class="num">18.75 GB</td><td class="num">37.5 MB</td></tr>
+      <tr><td>Ceiling at 600 backends</td><td class="num">37.5 GB</td><td class="num">75 MB</td></tr>
+    </table>
+    </div>
+
+    <div class="note good"><b>What you get, in order of importance.</b> First, <b>several gigabytes of RAM come back</b>. The page cache can use them, or you can give them to a larger <code>shared_buffers</code>. Second, CPU usage usually drops by <b>5–20%</b>, because the TLB hits more often and the faults stop happening. The RAM is the safe win. The CPU is a bonus, and it depends a lot on how random your access pattern is.</div>
+
+    <div class="note"><b>Explicit, not transparent.</b> Transparent Huge Pages are a different mechanism. The kernel only tries: it gives you huge pages when it can, and it may take them back later. With some settings, the work of building them can also cause latency spikes. An explicit hugetlb reservation is a guarantee. THP is only a chance, so one cannot replace the other. The post covers the settings, the sizing, and the ways a reservation can fail without telling you: <a href="/2026/07/28/postgresql-huge-pages.html">PostgreSQL configuration →</a></div>
+  </div>
+</section>
+
+<!-- ============ 07 POOLERS ============ -->
+<section id="pooler">
+  <div class="wrap">
+    <div class="snum">07 — THE OTHER LEVER</div>
+    <h2>A pooler works on <span class="tint">the other half of the formula</span></h2>
+    <p class="sub">The cost is <code>backends × shared_buffers ÷ page_size</code>. Huge pages make the third part smaller. A connection pooler puts a limit on the first part, and it needs no reboot, no kernel settings and no reserved memory. If you do not use one yet, start there.</p>
+
+    <div class="panel">
+      <div class="stage"><div id="plsvg"></div></div>
+      <div class="narr" id="pl-narr"><span class="tag">the same shared_buffers underneath both</span>500 clients through a pool of 30 give you <b>30</b> page tables, not 500. The cost now depends on your pool size, not on how many connections your application opens.</div>
+    </div>
+
+    <div class="grid3">
+      <div class="card"><h4>pool_size sets the limit</h4><p>500 clients, <code>pool_size = 30</code> → 30 backends. About <b>1.9 GB</b> of page tables instead of 31 GB.</p></div>
+      <div class="card"><h4>Transaction mode</h4><p>Server connections are reused much more often. Each backend keeps a hot working set, and its translations stay in memory.</p></div>
+      <div class="card"><h4>Recycling</h4><p><code>server_lifetime</code> and <code>server_idle_timeout</code> close big backends and drop their page tables. But they also drop warm ones. This is a trade, not a free win.</p></div>
+    </div>
+
+    <div class="note"><b>One detail decides how bad this gets: how the pool chooses the next connection.</b> If it <i>spreads queries evenly</i> — round-robin, or always the connection that was idle longest — then every backend slowly reads most of <code>shared_buffers</code>. They all become hot, and each one carries a full-size table. If it <i>prefers the connection it used last</i>, the traffic stays on a few connections. Only those become hot, and the rest stay cold with small tables until an idle timeout closes them. Drivers and poolers use different names for this, so do not trust the name. Compare <code>VmPTE</code> across your backends instead. Similar numbers mean all of them are hot. Very different numbers mean only a few are.</div>
+
+    <div class="note info"><b>They work on different things.</b> A pooler makes the problem <i>smaller</i>. Huge pages make each unit <i>cheaper</i>. Together they give you 30 backends at 128 KB each, and that is a number nobody needs to think about.</div>
+  </div>
+</section>
+
+<!-- ============ 08 RECAP ============ -->
+<section id="recap">
+  <div class="wrap">
+    <div class="snum">08 — RECAP</div>
+    <h2>What to take away</h2>
+
+    <div class="tblwrap">
+    <table class="kv">
+      <tr><th>The claim</th><th>Why it is true</th></tr>
+      <tr><td><b>Page tables cost real RAM</b></td><td>8 bytes per 4 KB page. A fully warmed 32 GB <code>shared_buffers</code> needs 64 MB of entries to describe it.</td></tr>
+      <tr><td><b>The cost multiplies by backends</b></td><td>Each process keeps its own table, so the total grows with your connection count. For one 32 GB pool, 300 backends give a ceiling of 18.75 GB.</td></tr>
+      <tr><td><b>Warm-up is not shared either</b></td><td>Backend B faults on a page that backend A has already faulted in, because B's own table is empty there. These faults are minor. There is no I/O, so nothing in your metrics points at them.</td></tr>
+      <tr><td><b>Huge pages remove 511 of every 512 entries</b></td><td>One entry covers 2 MB instead of 4 KB. The same memory, 512× fewer descriptions of it, and 512× fewer first-touch faults to build them.</td></tr>
+      <tr><td><b>Shared memory only</b></td><td><code>work_mem</code>, <code>maintenance_work_mem</code>, catalog and plan caches all stay on 4 KB pages. Huge pages work on the shared memory segment and nothing else.</td></tr>
+      <tr><td><b>It only matters at scale</b></td><td>With a small <code>shared_buffers</code> and few connections, none of this is your problem. The measurement tells you which case you are in.</td></tr>
+    </table>
+    </div>
+
+    <div class="note"><b>Measure before and after.</b> <code>grep '^PageTables' /proc/meminfo</code> takes one second and answers the only question that matters. Is this costing you a few hundred megabytes, or tens of gigabytes? If it is a few hundred MB, spend your time on something else. If it is several GB, the migration is worth the work. Everything above only explains that one number. The steps to roll it out are in <a href="/2026/07/28/postgresql-huge-pages.html">the post</a>.</div>
+  </div>
+</section>
+
+<script>
+(function(){
+'use strict';
+var NS='http://www.w3.org/2000/svg';
+var C={mem:'#3ecfb2',be:'#5aa9ff',miss:'#ff5f7e',pt:'#ffd166',huge:'#a97bff',
+  ok:'#7ee787',warn:'#ffab3d',line:'#2b3866',line2:'#3b4a80',dim:'#8e99c4',faint:'#5d6894',
+  text:'#dbe1f5',ink2:'#151d38',ink3:'#1e2950'};
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function S(t,a,k){var e=document.createElementNS(NS,t);a=a||{};
+  for(var q in a){if(a[q]!==null&&a[q]!==undefined)e.setAttribute(q,a[q]);}
+  (k||[]).forEach(function(c){e.appendChild(c);});return e;}
+function tx(x,y,s,a){a=a||{};a.x=x;a.y=y;var e=S('text',a);e.textContent=s;return e;}
+function mount(id,w,h){var host=document.getElementById(id);if(!host)return null;
+  var svg=S('svg',{viewBox:'0 0 '+w+' '+h,'aria-hidden':'true'});host.innerHTML='';host.appendChild(svg);return svg;}
+function at(g,x,y){g.style.transform='translate('+x+'px,'+y+'px)';}
+function say(id,tag,html){var n=document.getElementById(id);if(!n)return;
+  n.innerHTML=(tag?'<span class="tag">'+tag+'</span>':'')+html;}
+function defs(svg){
+  var d=S('defs');
+  [['ah',C.line2],['ahm',C.miss],['ahp',C.pt],['ahg',C.huge],['aho',C.ok],['ahb',C.be],['ahc',C.mem]].forEach(function(m){
+    d.appendChild(S('marker',{id:m[0],viewBox:'0 0 10 10',refX:8.5,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'},
+      [S('path',{d:'M0 0 L10 5 L0 10 z',fill:m[1]})]));
+  });
+  svg.appendChild(d);
+}
+function box(o){
+  var w=o.w||150,h=o.h||70;
+  var g=S('g',{class:'node'});
+  var r=S('rect',{class:'nbox',x:0,y:0,rx:11,width:w,height:h,fill:o.fill||'rgba(255,255,255,.035)',
+    stroke:o.col||C.line,'stroke-width':1.8});
+  var glow=S('rect',{class:'nbox',x:0,y:0,rx:11,width:w,height:h,fill:'none',stroke:'none','stroke-width':3});
+  var name=tx(w/2,o.sub!==undefined?28:h/2+5,o.name||'',{class:'ttx','text-anchor':'middle',fill:o.col||C.text});
+  g.appendChild(r);g.appendChild(glow);g.appendChild(name);
+  var sub=null;
+  if(o.sub!==undefined){sub=tx(w/2,48,o.sub,{class:'lbl','text-anchor':'middle',fill:C.faint,'font-size':11});g.appendChild(sub);}
+  return {g:g,w:w,h:h,box:r,glow:glow,name:name,sub:sub,
+    hi:function(on,col){glow.setAttribute('stroke',on?(col||C.pt):'none');glow.setAttribute('opacity',on?.95:0);
+      if(on&&!REDUCED){g.classList.remove('blip');void g.offsetWidth;g.classList.add('blip');}},
+    tint:function(col){r.setAttribute('stroke',col);name.setAttribute('fill',col);},
+    setSub:function(t,col){if(sub){sub.textContent=t;sub.setAttribute('fill',col||C.faint);}}};
+}
+function link(x1,y1,x2,y2,col,dash,marker){
+  return S('path',{class:'flow',d:'M'+x1+' '+y1+' L'+x2+' '+y2,stroke:col||C.line2,'stroke-width':1.7,
+    fill:'none','stroke-dasharray':dash||null,'marker-end':marker||null});
+}
+function token(label,col){
+  var g=S('g',{class:'tok'});g.style.opacity=0;
+  var w=label.length*7.4+20;
+  g.appendChild(S('rect',{x:-w/2,y:-11,rx:6,width:w,height:22,fill:'rgba(13,18,38,.92)',stroke:col,'stroke-width':1.4}));
+  var t=tx(0,4,label,{class:'lbl2','text-anchor':'middle',fill:col,'font-size':11});
+  g.appendChild(t);
+  return {g:g,el:t,show:function(on){g.style.opacity=on?1:0;},
+    moveTo:function(x,y){g.style.transform='translate('+x+'px,'+y+'px)';},
+    setText:function(s){t.textContent=s;}};
+}
+/* stepper wiring shared by every panel */
+function stepper(pfx,max,render){
+  var timer=null;
+  function stop(){if(timer){clearInterval(timer);timer=null;}
+    var b=document.getElementById(pfx+'-play');if(b)b.textContent='Play';}
+  var st={i:0};
+  function go(n){st.i=Math.max(0,Math.min(max,n));render(st.i);
+    var c=document.getElementById(pfx+'-n');if(c)c.textContent=st.i+1;}
+  var nx=document.getElementById(pfx+'-next');if(nx)nx.onclick=function(){stop();go(st.i+1);};
+  var pv=document.getElementById(pfx+'-prev');if(pv)pv.onclick=function(){stop();go(st.i-1);};
+  var rs=document.getElementById(pfx+'-rst');if(rs)rs.onclick=function(){stop();go(0);};
+  var pl=document.getElementById(pfx+'-play');
+  if(pl)pl.onclick=function(){
+    if(timer){stop();return;}
+    pl.textContent='Pause';
+    if(st.i>=max)go(0);
+    timer=setInterval(function(){if(st.i>=max){stop();return;}go(st.i+1);},1600);
+  };
+  go(0);
+  return st;
+}
+window.HP={S:S,tx:tx,mount:mount,at:at,say:say,defs:defs,box:box,link:link,token:token,
+  stepper:stepper,C:C,REDUCED:REDUCED};
+})();
+</script>
+
+<script>
+/* ============ HERO ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,box=X.box,link=X.link,C=X.C;
+var svg=mount('hero',960,252);if(!svg)return;X.defs(svg);
+
+var pool=box({name:'shared_buffers',sub:'32 GB — one physical copy',w:300,h:74,col:C.mem,
+  fill:'rgba(62,207,178,.07)'});
+at(pool.g,330,140);
+
+var bes=[],pts=[],N=6;
+var flows=S('g');svg.appendChild(flows);
+for(var i=0;i<N;i++){
+  var x=40+i*150;
+  var b=box({name:'backend '+(i+1),w:124,h:40,col:C.be});at(b.g,x,18);
+  var p=box({name:'64 MB',w:124,h:34,col:C.pt});at(p.g,x,70);
+  p.g.style.opacity=0;p.g.style.transition='opacity .5s';
+  bes.push(b);pts.push(p);
+  svg.appendChild(b.g);svg.appendChild(p.g);
+  var l=link(x+62,58,x+62,70,C.line2,null,null);l.setAttribute('opacity',0);
+  flows.appendChild(l);p.link=l;
+  var l2=link(x+62,104,480,140,C.line,'4 4',null);l2.setAttribute('opacity',.25);
+  flows.appendChild(l2);
+}
+svg.appendChild(pool.g);
+var tot=tx(480,240,'',{class:'lbl2','text-anchor':'middle',fill:C.pt,'font-size':15});
+svg.appendChild(tot);
+
+var k=0;
+function loop(){
+  if(X.REDUCED){pts.forEach(function(p){p.g.style.opacity=1;p.link.setAttribute('opacity',1);});
+    tot.textContent='6 backends → 384 MB of page tables';return;}
+  k=(k+1)%(N+2);
+  pts.forEach(function(p,i){
+    var on=i<k;
+    p.g.style.opacity=on?1:0;
+    p.link.setAttribute('opacity',on?1:0);
+    if(on&&i===k-1)p.hi(true,C.pt);else p.hi(false);
+  });
+  var n=Math.min(k,N);
+  tot.textContent=n?(n+' backend'+(n>1?'s':'')+' → '+(n*64)+' MB of page tables'):'';
+  setTimeout(loop,900);
+}
+loop();
+})();
+</script>
+
+<script>
+/* ============ 02 THE LOOKUP ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,say=X.say,box=X.box,link=X.link,token=X.token,C=X.C;
+var svg=mount('lksvg',960,320);if(!svg)return;X.defs(svg);
+
+var va =box({name:'VIRTUAL ADDR',sub:'what the backend uses',w:180,h:74,col:C.be});at(va.g,30,40);
+var tlb=box({name:'TLB',sub:'~2000 entries',w:150,h:74,col:C.be});at(tlb.g,270,40);
+var pa =box({name:'PHYSICAL ADDR',sub:'the actual RAM',w:180,h:74,col:C.mem});at(pa.g,700,40);
+
+var flows=S('g');svg.appendChild(flows);
+var l1=flows.appendChild(link(210,77,270,77,C.line2,null,'url(#ah)'));
+var lhit=flows.appendChild(link(420,77,700,77,C.mem,null,'url(#ahc)'));
+var hitlab=tx(560,64,'hit — almost free',{class:'lbl','text-anchor':'middle',fill:C.faint});
+flows.appendChild(hitlab);
+
+/* miss branch */
+var lmiss=flows.appendChild(link(345,114,345,175,C.miss,null,'url(#ahm)'));
+var misslab=tx(310,150,'miss',{class:'lbl','text-anchor':'end',fill:C.miss});flows.appendChild(misslab);
+
+var lv=[],names=['PGD','PUD','PMD','PTE'];
+for(var i=0;i<4;i++){
+  var b=box({name:names[i],w:78,h:52,col:C.miss,fill:'rgba(255,95,126,.06)'});
+  at(b.g,275+i*96,180);lv.push(b);svg.appendChild(b.g);
+  if(i<3)flows.appendChild(link(353+i*96,206,371+i*96,206,C.miss,null,'url(#ahm)'));
+}
+var walklab=tx(430,252,'page walk — one read after another',{class:'lbl','text-anchor':'middle',fill:C.faint});
+flows.appendChild(walklab);
+var lback=flows.appendChild(link(659,206,790,206,C.miss,null,'url(#ahm)'));
+var lup=flows.appendChild(S('path',{class:'flow',d:'M790 206 L860 206 L860 114',stroke:C.miss,'stroke-width':1.7,
+  fill:'none','marker-end':'url(#ahm)'}));
+
+svg.appendChild(va.g);svg.appendChild(tlb.g);svg.appendChild(pa.g);
+var tok=token('0x7f2a…','#5aa9ff');svg.appendChild(tok.g);
+
+var TXT=[
+ ['1 · the request','The backend reads a byte inside <b>shared_buffers</b>. It has a <b>virtual</b> address. The CPU cannot use it directly and must translate it first.'],
+ ['2 · check the TLB','The CPU looks in the <b>TLB</b>, its hardware cache of recent translations. This is the fast path, and this is where you want to be.'],
+ ['3 · hit','Found. The physical address comes back at almost zero cost. With a small working set, nearly every access ends here.'],
+ ['4 · miss','Not found. The TLB holds only about 2000 entries, which covers about <b>8 MB</b> with 4 KB pages. A 32 GB <code>shared_buffers</code> goes past that all the time.'],
+ ['5 · walk the tree','Now the CPU reads the page table itself. On classic x86-64 that is four levels, and each read depends on the one before it. Only then can the original access start. <b>Huge pages remove the last level.</b>']
+];
+function render(step){
+  [va,tlb,pa].forEach(function(b){b.hi(false);});
+  lv.forEach(function(b){b.hi(false);b.g.style.opacity=step>=4?1:.22;});
+  lhit.setAttribute('opacity',step===2?1:.15);
+  hitlab.setAttribute('opacity',step===2?1:.25);
+  lmiss.setAttribute('opacity',step>=3?1:.12);
+  misslab.setAttribute('opacity',step>=3?1:.2);
+  walklab.setAttribute('opacity',step>=4?1:.2);
+  lback.setAttribute('opacity',step>=4?1:.12);
+  lup.setAttribute('opacity',step>=4?1:.12);
+  tok.show(true);
+  if(step===0){tok.moveTo(120,77);va.hi(true,C.be);}
+  if(step===1){tok.moveTo(345,77);tlb.hi(true,C.be);}
+  if(step===2){tok.moveTo(790,77);pa.hi(true,C.mem);}
+  if(step===3){tok.moveTo(345,140);tlb.hi(true,C.miss);}
+  if(step===4){tok.moveTo(620,206);lv.forEach(function(b,i){setTimeout(function(){b.hi(true,C.miss);},i*160);});
+    pa.hi(true,C.mem);}
+  say('lk-narr',TXT[step][0],TXT[step][1]);
+}
+X.stepper('lk',4,render);
+})();
+</script>
+
+<script>
+/* ============ 03 PER-PROCESS ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,say=X.say,box=X.box,link=X.link,token=X.token,C=X.C;
+var svg=mount('pmsvg',960,378);if(!svg)return;X.defs(svg);
+
+var pm=box({name:'postmaster',w:150,h:44,col:C.dim});at(pm.g,405,8);
+var bes=[],pts=[],xs=[60,405,750];
+var flows=S('g');svg.appendChild(flows);
+for(var i=0;i<3;i++){
+  var b=box({name:'backend '+(i+1),w:150,h:44,col:C.be});at(b.g,xs[i],78);
+  var p=box({name:'page table',sub:'empty',w:150,h:62,col:C.line2});at(p.g,xs[i],142);
+  bes.push(b);pts.push(p);
+  flows.appendChild(link(xs[i]+75,122,xs[i]+75,142,C.line2,null,null));
+  flows.appendChild(link(xs[i]+75,204,480,268,C.line,'4 4',null));
+  if(i!==1)flows.appendChild(link(480,52,xs[i]+75,78,C.line,'3 3','url(#ah)'));
+}
+flows.appendChild(link(480,52,480,78,C.line,'3 3','url(#ah)'));
+var pool=box({name:'shared_buffers — 32 GB',sub:'one physical copy of every page',w:340,h:70,col:C.mem,
+  fill:'rgba(62,207,178,.07)'});at(pool.g,310,268);
+svg.appendChild(pm.g);
+bes.forEach(function(b){svg.appendChild(b.g);});
+pts.forEach(function(p){svg.appendChild(p.g);});
+svg.appendChild(pool.g);
+var pgx=tx(480,360,'',{class:'lbl2','text-anchor':'middle',fill:C.mem,'font-size':12});
+svg.appendChild(pgx);
+var f1=token('minor fault','#ff5f7e'),f2=token('minor fault AGAIN','#ff5f7e');
+svg.appendChild(f1.g);svg.appendChild(f2.g);
+
+var TXT=[
+ ['1 · the pool is mapped','The postmaster maps 32 GB of shared memory. This reserves <b>address space</b> only. There are no physical pages yet, and every backend forked from here starts with an almost <b>empty</b> table for that range.'],
+ ['2 · backend 1 touches page 100','It faults. The kernel gives out the physical page, fills in <b>backend 1\'s</b> entry, and the access runs again. Normal, expected and cheap.'],
+ ['3 · backend 2 touches the SAME page 100','Same virtual address. Same physical page: already in RAM, already faulted in once. And backend 2 <b>still takes a minor fault</b>, because its own page table is empty at that place.'],
+ ['4 · nothing is shared','The work of backend 1 gives backend 2 nothing. Page tables belong to one process. The TLB does not help either, because its entries also belong to one address space. Backend 2 cannot use a translation that backend 1 made.'],
+ ['5 · multiply by your connection count','Each backend faults in what it reads by itself, and pays for the entries by itself. At 64 MB per fully warmed backend, 300 of them use <b>18.75 GB</b> of RAM to describe memory you already own.']
+];
+function render(step){
+  bes.forEach(function(b){b.hi(false);});
+  pts.forEach(function(p,i){p.hi(false);p.tint(C.line2);p.setSub('empty',C.faint);});
+  pool.hi(false);f1.show(false);f2.show(false);pgx.textContent='';
+  if(step>=1){pts[0].tint(C.pt);pts[0].setSub('page 100 ✓',C.pt);bes[0].hi(true,C.be);
+    pool.hi(true,C.mem);pgx.textContent='page 100 — allocated once, physically';}
+  if(step===1){f1.show(true);f1.moveTo(135,238);}
+  if(step>=2){pts[1].tint(C.pt);pts[1].setSub('page 100 ✓',C.pt);bes[1].hi(true,C.be);}
+  if(step===2){f2.show(true);f2.moveTo(480,238);}
+  if(step>=3){pts[2].tint(C.line2);}
+  if(step>=4){pts.forEach(function(p){p.tint(C.pt);p.setSub('up to 64 MB each',C.pt);});
+    bes.forEach(function(b){b.hi(true,C.be);});
+    pgx.textContent='300 backends → up to 18.75 GB of page tables for this one 32 GB region';}
+  say('pm-narr',TXT[step][0],TXT[step][1]);
+}
+X.stepper('pm',4,render);
+})();
+</script>
+
+<script>
+/* ============ 04 FIRST TOUCH ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,say=X.say,box=X.box,link=X.link,token=X.token,C=X.C;
+var svg=mount('ftsvg',960,300);if(!svg)return;X.defs(svg);
+
+var steps=[
+  {n:'touch',s:'backend reads a buffer'},
+  {n:'TLB miss',s:'not cached'},
+  {n:'page walk',s:'entry not present'},
+  {n:'minor fault',s:'kernel fills the entry'},
+  {n:'retry',s:'TLB hit — cheap forever'}
+];
+var bx=[],flows=S('g');svg.appendChild(flows);
+for(var i=0;i<5;i++){
+  var x=22+i*188;
+  var b=box({name:steps[i].n,sub:steps[i].s,w:168,h:78,col:C.line2});at(b.g,x,86);
+  bx.push(b);svg.appendChild(b.g);
+  var c=S('circle',{cx:x+84,cy:66,r:13,fill:C.line2,class:'nbox'});svg.appendChild(c);b.dot=c;
+  var n=tx(x+84,71,String(i+1),{class:'lbl2','text-anchor':'middle',fill:'#0d1226','font-size':12});
+  svg.appendChild(n);
+  if(i<4)flows.appendChild(link(x+168,125,x+188,125,C.line2,null,'url(#ah)'));
+}
+var loop=S('path',{class:'flow',d:'M878 164 L878 214 L106 214 L106 172',stroke:C.ok,'stroke-width':1.7,
+  fill:'none','stroke-dasharray':'5 4','marker-end':'url(#aho)','opacity':0});
+flows.appendChild(loop);
+var looplab=tx(492,234,'every later access to this page: TLB hit, no fault',
+  {class:'lbl','text-anchor':'middle',fill:C.ok,'opacity':0});
+flows.appendChild(looplab);
+var note=tx(480,274,'',{class:'lbl2','text-anchor':'middle',fill:C.miss,'font-size':13});
+svg.appendChild(note);
+
+var COL=[C.be,C.miss,C.miss,C.warn,C.ok];
+var TXT=[
+ ['1 · touch','A query needs a data page, so the backend reads an address inside <code>shared_buffers</code>. Everything below happens before that one read finishes.'],
+ ['2 · TLB miss','The translation is not in the cache. With 8 MB of reach against a 32 GB <code>shared_buffers</code>, this is the normal case, not the exception.'],
+ ['3 · walk, and find nothing','The CPU walks the page table, and the entry is <b>not there</b>. This process has never touched this page before.'],
+ ['4 · minor fault','A short switch into the kernel. It finds the page already in shared memory, fills in the entry for this process, and returns. <b>There is no disk I/O at all</b>, and that is what makes it <i>minor</i>.'],
+ ['5 · retry, then cheap forever','The instruction runs again and now hits in the TLB. Only the <b>first</b> touch is expensive. But every backend pays it separately, on every page it reads.']
+];
+function render(step){
+  bx.forEach(function(b,i){
+    var on=i<=step;
+    b.g.style.opacity=on?1:.28;
+    b.tint(on?COL[i]:C.line2);
+    b.dot.setAttribute('fill',on?COL[i]:C.line2);
+    b.hi(i===step,COL[i]);
+  });
+  loop.setAttribute('opacity',step>=4?1:0);
+  looplab.setAttribute('opacity',step>=4?1:0);
+  note.textContent=step>=3?'8.4 million of these to fully warm ONE backend against 32 GB':'';
+  note.setAttribute('fill',step>=4?C.ok:C.miss);
+  if(step>=4)note.textContent='with 2 MB pages: 16,384 instead of 8,388,608';
+  say('ft-narr',TXT[step][0],TXT[step][1]);
+}
+X.stepper('ft',4,render);
+})();
+</script>
+
+<script>
+/* ============ 05 EXPLORER ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,say=X.say,C=X.C;
+var svg=mount('exsvg',960,150);if(!svg)return;
+
+var sb=document.getElementById('ex-sb'),be=document.getElementById('ex-be');
+if(!sb||!be)return;
+var GB=1024*1024*1024;
+var x0=150,x1=880;
+var lo=Math.log10(0.25), hi=Math.log10(1024*1024);   /* MB scale: 0.25 MB … 1 TB */
+
+function px(mb){var v=Math.log10(Math.max(mb,0.25));
+  return x0+Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*(x1-x0);}
+
+var g=S('g');svg.appendChild(g);
+g.appendChild(S('line',{x1:x0,y1:24,x2:x0,y2:126,stroke:C.line,'stroke-width':1}));
+[1,16,256,4096,65536,1048576].forEach(function(mb){
+  var x=px(mb);
+  g.appendChild(S('line',{x1:x,y1:118,x2:x,y2:126,stroke:C.line,'stroke-width':1}));
+  g.appendChild(tx(x,142,mb>=1048576?'1 TB':(mb>=1024?(mb/1024)+' GB':mb+' MB'),
+    {class:'lbl','text-anchor':'middle',fill:C.faint}));
+});
+var r4=S('rect',{class:'gr',x:x0,y:38,height:26,rx:4,fill:C.miss,width:0});
+var r2=S('rect',{class:'gr',x:x0,y:76,height:26,rx:4,fill:C.ok,width:0});
+g.appendChild(r4);g.appendChild(r2);
+g.appendChild(tx(x0-12,56,'4 KB',{class:'lbl2','text-anchor':'end',fill:C.miss,'font-size':12}));
+g.appendChild(tx(x0-12,94,'2 MB',{class:'lbl2','text-anchor':'end',fill:C.ok,'font-size':12}));
+var t4=tx(0,56,'',{class:'lbl2','text-anchor':'start',fill:C.miss,'font-size':12});
+var t2=tx(0,94,'',{class:'lbl2','text-anchor':'start',fill:C.ok,'font-size':12});
+g.appendChild(t4);g.appendChild(t2);
+g.appendChild(tx((x0+x1)/2,16,'page-table ceiling — logarithmic scale',
+  {class:'lbl','text-anchor':'middle',fill:C.faint}));
+
+function fmt(mb){
+  if(mb>=1024)return (mb/1024).toFixed(mb/1024>=10?1:2)+' GB';
+  if(mb>=1)return mb.toFixed(mb>=10?0:1)+' MB';
+  return (mb*1024).toFixed(0)+' KB';
+}
+function upd(){
+  var sbGB=+sb.value, n=+be.value;
+  document.getElementById('ex-sb-o').textContent=sbGB+' GB';
+  document.getElementById('ex-be-o').textContent=n;
+
+  var bytes=sbGB*GB;
+  var e4=bytes/4096, e2=bytes/(2*1024*1024);
+  var per4=e4*8/(1024*1024), per2=e2*8/(1024*1024);   /* MB per backend */
+  var tot4=per4*n, tot2=per2*n;
+
+  document.getElementById('ex-v4').textContent=fmt(tot4);
+  document.getElementById('ex-v2').textContent=fmt(tot2);
+  document.getElementById('ex-d4').textContent=fmt(per4)+' per backend × '+n;
+  document.getElementById('ex-d2').textContent=fmt(per2)+' per backend × '+n;
+
+  r4.setAttribute('width',Math.max(px(tot4)-x0,2));
+  r2.setAttribute('width',Math.max(px(tot2)-x0,2));
+  t4.setAttribute('x',px(tot4)+9);t4.textContent=fmt(tot4);
+  t2.setAttribute('x',px(tot2)+9);t2.textContent=fmt(tot2);
+
+  var pct=tot4/(sbGB*1024)*100;
+  var tag,msg;
+  if(tot4<256){tag='not your problem';
+    msg='Even at the ceiling this is only <b>'+fmt(tot4)+'</b>. Huge pages would save <b>'+fmt(tot4-tot2)+'</b>. That is real, but it is almost certainly not your problem. Spend your time on something else.';}
+  else if(tot4<2048){tag='worth knowing about';
+    msg='Up to <b>'+fmt(tot4)+'</b> of RAM to describe '+sbGB+' GB you already own, which is about <b>'+pct.toFixed(0)+'%</b> of the pool size. Huge pages would bring it down to <b>'+fmt(tot2)+'</b>. Measure before you act.';}
+  else{tag='this is worth fixing';
+    msg='Up to <b>'+fmt(tot4)+'</b> used to describe '+sbGB+' GB. That is <b>'+pct.toFixed(0)+'%</b> of shared_buffers itself, and it is never available for anything else. With 2 MB pages the same setup needs <b>'+fmt(tot2)+'</b>.';}
+  say('ex-narr',tag,msg);
+}
+sb.addEventListener('input',upd);be.addEventListener('input',upd);
+upd();
+})();
+</script>
+
+<script>
+/* ============ 06 HUGE PAGES ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,say=X.say,box=X.box,link=X.link,C=X.C;
+var svg=mount('hpsvg',960,300);if(!svg)return;X.defs(svg);
+
+var lv=[],names=['PGD','PUD','PMD','PTE'];
+var flows=S('g');svg.appendChild(flows);
+for(var i=0;i<4;i++){
+  var b=box({name:names[i],w:120,h:56,col:C.pt});at(b.g,60+i*175,40);
+  lv.push(b);svg.appendChild(b.g);
+  if(i<3)flows.appendChild(link(180+i*175,68,235+i*175,68,C.line2,null,'url(#ah)'));
+}
+var leafArrow=flows.appendChild(link(705,68,790,120,C.line2,null,'url(#ah)'));
+var pmdArrow=flows.appendChild(S('path',{class:'flow',d:'M470 96 L470 130 L790 130',stroke:C.huge,
+  'stroke-width':2,fill:'none','marker-end':'url(#ahg)','opacity':0}));
+var mem=box({name:'physical memory',sub:'identical in both cases',w:180,h:64,col:C.mem,
+  fill:'rgba(62,207,178,.07)'});at(mem.g,780,100);
+svg.appendChild(mem.g);
+
+var cap=tx(480,200,'',{class:'lbl2','text-anchor':'middle',fill:C.text,'font-size':14});
+var cap2=tx(480,228,'',{class:'lbl','text-anchor':'middle',fill:C.faint,'font-size':12.5});
+var cap3=tx(480,258,'',{class:'lbl2','text-anchor':'middle',fill:C.pt,'font-size':13});
+svg.appendChild(cap);svg.appendChild(cap2);svg.appendChild(cap3);
+
+var b4=document.getElementById('hp-4k'),b2=document.getElementById('hp-2m');
+function render(huge){
+  b4.classList.toggle('on',!huge);b2.classList.toggle('on',huge);
+  lv[3].g.style.opacity=huge?.2:1;
+  lv[3].tint(huge?C.line2:C.pt);
+  leafArrow.setAttribute('opacity',huge?.12:1);
+  pmdArrow.setAttribute('opacity',huge?1:0);
+  lv[2].tint(huge?C.huge:C.pt);
+  lv.forEach(function(b){b.hi(false);});
+  if(huge)lv[2].hi(true,C.huge);else lv[3].hi(true,C.pt);
+  cap.setAttribute('fill',huge?C.huge:C.text);
+  if(huge){
+    cap.textContent='The PMD entry maps 2 MB directly — the PTE level is never created';
+    cap2.textContent='32 GB ÷ 2 MB = 16,384 entries';
+    cap3.textContent='128 KB of page tables per backend';cap3.setAttribute('fill',C.ok);
+    say('hp-narr','2 mb huge pages','The walk stops one level earlier. One <b>PMD</b> entry covers a whole 2 MB region, so the last level never exists at all, and with it 511 of every 512 entries. The same physical memory, 512× fewer descriptions of it, and 512× fewer faults to build them.');
+  }else{
+    cap.textContent='Four levels, and the last one holds one entry per 4 KB page';
+    cap2.textContent='32 GB ÷ 4 KB = 8,388,608 entries';
+    cap3.textContent='64 MB of page tables per backend';cap3.setAttribute('fill',C.miss);
+    say('hp-narr','4 kb pages — the default','Every 4 KB of <code>shared_buffers</code> needs its own <b>PTE</b>. The last level alone holds 8.4 million entries at 8 bytes each. Every backend has to fault in each of those entries one by one, the first time it reads that page.');
+  }
+}
+b4.onclick=function(){render(false);};
+b2.onclick=function(){render(true);};
+render(false);
+})();
+</script>
+
+<script>
+/* ============ 07 POOLER ============ */
+(function(){
+var X=window.HP;if(!X)return;
+var S=X.S,tx=X.tx,mount=X.mount,at=X.at,box=X.box,link=X.link,C=X.C;
+var svg=mount('plsvg',960,300);if(!svg)return;X.defs(svg);
+var flows=S('g');svg.appendChild(flows);
+svg.appendChild(S('line',{x1:480,y1:20,x2:480,y2:250,stroke:C.line,'stroke-width':1,'stroke-dasharray':'4 4'}));
+
+function side(x,title,col,rows){
+  svg.appendChild(tx(x+150,32,title,{class:'ttx','text-anchor':'middle',fill:col,'font-size':14}));
+  var prev=null;
+  rows.forEach(function(r,i){
+    var b=box({name:r[0],sub:r[1],w:300,h:r[1]?58:42,col:i?col:C.dim,
+      fill:i===rows.length-1?'rgba(255,255,255,.03)':null});
+    at(b.g,x,56+i*76);svg.appendChild(b.g);
+    if(prev!==null)flows.appendChild(link(x+150,prev,x+150,56+i*76,col,null,'url(#'+(col===C.miss?'ahm':'aho')+')'));
+    prev=56+i*76+(r[1]?58:42);
+  });
+}
+side(20,'without a pooler',C.miss,[
+  ['500 clients',''],
+  ['500 backends','one process each'],
+  ['500 page tables','up to 31.25 GB of RAM']
+]);
+side(640,'with a pooler',C.ok,[
+  ['500 clients',''],
+  ['30 backends','pool_size = 30'],
+  ['30 page tables','up to 1.9 GB of RAM']
+]);
+svg.appendChild(tx(480,286,'the same 32 GB shared_buffers underneath both',
+  {class:'lbl','text-anchor':'middle',fill:C.faint}));
+})();
+</script>
+
+<script>
+/* ============ NAV SCROLL-SPY ============ */
+(function(){
+  var links=[].slice.call(document.querySelectorAll('nav a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  function upd(){
+    var y=window.scrollY+120,best=0;
+    secs.forEach(function(s,i){if(s&&s.offsetTop<=y)best=i;});
+    links.forEach(function(a,i){a.classList.toggle('on',i===best);});
+  }
+  window.addEventListener('scroll',upd,{passive:true});upd();
+})();
+</script>
+
+</body>
+</html>
