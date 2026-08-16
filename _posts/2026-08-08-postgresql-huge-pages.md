@@ -156,6 +156,12 @@ PostgreSQL documents [the whole procedure](https://www.postgresql.org/docs/curre
 SHOW shared_memory_size_in_huge_pages;   -- e.g. 16808
 ```
 
+This is not an estimate. At startup the postmaster sums every structure it is about to place in the main shared memory segment — the buffer pool and its descriptors, the lock tables, the per-backend arrays, the SLRU caches, WAL buffers, whatever `shared_preload_libraries` asked for — and divides by the huge page size.[^calc] The only inputs that matter are your own settings, so you can also compute the number for a configuration you do not run yet:
+
+**[→ How many huge pages does PostgreSQL need? — the sizing calculator]({{ site.baseurl }}/assets/posts/howtoworks_shmem_sizing.html)**
+
+It reimplements that sum from the source, shows which setting is responsible for which slice of the segment, and prints the `vm.nr_hugepages` line to install. Against `postgres -C` on real 17 and 18 servers it lands within 0.25 %.
+
 This parameter is computed at startup, so `postgres -C` can read it **only while the server is shut down** — against a live instance it fails on the `postmaster.pid` lock rather than printing a value:
 
 ```bash
@@ -163,10 +169,10 @@ This parameter is computed at startup, so `postgres -C` can read it **only while
 postgres -D /var/lib/postgresql/data -C shared_memory_size_in_huge_pages
 ```
 
-Reserve that many plus a small margin — but no more than you need. The pool is managed through [`vm.nr_hugepages`](https://docs.kernel.org/admin-guide/mm/hugetlbpage.html). Reserved huge pages leave the general pool entirely: they never show as free, the page cache cannot use them, and that stays true even while PostgreSQL is stopped. The setting that counts is the one applied at boot, when memory is least fragmented:
+Reserve that many plus **1–2 %**, rounded up to a number you can read at a glance — and no more. The margin is not there for measurement error, because there is none; it covers config drift, and only the cheap kind: a few hundred extra connections cost tens of KB each, raising `max_locks_per_transaction` costs about 390 bytes per lock slot per backend. A larger `shared_buffers` is not drift — 1 GB more pool is 512 more pages, so recompute and re-reserve instead. The same goes for adding an extension to `shared_preload_libraries`: its shared memory is included in the number only if the library was loaded when you read it. Padding the reservation "just in case" is the expensive way to be safe — the pool is managed through [`vm.nr_hugepages`](https://docs.kernel.org/admin-guide/mm/hugetlbpage.html). Reserved huge pages leave the general pool entirely: they never show as free, the page cache cannot use them, and that stays true even while PostgreSQL is stopped. The setting that counts is the one applied at boot, when memory is least fragmented:
 
 ```bash
-echo 'vm.nr_hugepages = 17000' > /etc/sysctl.d/99-postgresql-hugepages.conf
+echo 'vm.nr_hugepages = 17000' >> /etc/sysctl.conf
 ```
 
 `sysctl -w` applies the same value immediately and is useful for testing on a live machine, but it is the unreliable path: on a fragmented system the kernel hands back **fewer pages than requested, without reporting an error**. Always read back what you actually got:
@@ -186,37 +192,22 @@ sysctl -w vm.nr_hugepages=17000
 grep HugePages_Total /proc/meminfo    # check again
 ```
 
-Still short — **reboot the machine**, and the value you wrote to `99-postgresql-hugepages.conf` above will be applied early in boot, while memory is still largely unfragmented.
+Still short — **reboot the machine**, and the value you wrote to `/etc/sysctl.conf` above will be applied early in boot, while memory is still largely unfragmented.
 
-On a multi-socket server, check `vm.zone_reclaim_mode` first. When it is `1`, the kernel reclaims memory from the local node — dropping page cache — instead of using free memory on another node. It is a bit mask, and the higher bits are worse: `2` also writes dirty pages out, `4` also swaps. For a database that is exactly backwards:
-
-```bash
-sysctl vm.zone_reclaim_mode      # must be 0
-echo 'vm.zone_reclaim_mode = 0' > /etc/sysctl.d/99-postgresql-numa.conf
-```
-
-Modern kernels default to `0`, but older ones switched it on automatically when the NUMA distance was high, so it is worth confirming rather than assuming.
-
-### `huge_page_size`
-
-[Available since PostgreSQL 14](https://www.postgresql.org/docs/current/runtime-config-resource.html). Leave it at `0` for the system default — 2 MB on x86-64. 1 GB pages exist but bring their own problems.[^gb]
+> ⚠️ **On a multi-socket server, check that `vm.zone_reclaim_mode` is `0`** — with `1` the kernel throws away local page cache instead of taking free memory from a neighbouring node, which costs a database far more than the remote access it saves. It has been the kernel default since Linux 3.16, so this is a check for inherited machines and tuning profiles, not something you normally set.
 
 ### Transparent Huge Pages
 
-[THP](https://docs.kernel.org/admin-guide/mm/transhuge.html) is a different mechanism and not a substitute for explicit reservation. It is best-effort: the kernel gives you huge pages when it can and may take them back later, and depending on your kernel settings the work of producing them can cause latency spikes. Check what you have — the current value is the one in brackets:
+[THP](https://docs.kernel.org/admin-guide/mm/transhuge.html) is a different mechanism and not a substitute for an explicit reservation: it is best-effort, so the kernel gives you huge pages when it can and may take them back later. The usual advice is to turn it off. These are sysfs knobs, **not sysctls** — `/etc/sysctl.conf` will not persist them:
 
 ```bash
-cat /sys/kernel/mm/transparent_hugepage/enabled   # e.g. [always] madvise never
-cat /sys/kernel/mm/transparent_hugepage/defrag
-```
-
-Set `enabled` to `never`; `defrag` then has nothing to act on. These are sysfs knobs, **not sysctls** — `/etc/sysctl.d/` will not persist them, and the change is lost on reboot:
-
-```bash
+cat /sys/kernel/mm/transparent_hugepage/enabled   # current value is the one in brackets
 echo never > /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-To make it permanent, add `transparent_hugepage=never` to the kernel command line. `madvise` is also acceptable, but then `defrag` starts to matter again and has no cmdline equivalent — persist it through a tuned profile or a systemd unit.
+To make it permanent, add `transparent_hugepage=never` to the kernel command line.
+
+> 🧠 **About this advice.** "Turn off THP" has been repeated in article after article for decades — and now in this one too. I have not tested it on a modern kernel. I think it matters much less today than it did ten years ago: kernels have changed a lot since then, and the default settings for compaction and defrag are far better. The problems these articles describe may simply not happen any more. Someone should test this properly and write about it, because THP would be much easier to live with than reserving huge pages by hand: no fixed pool, no sizing, no reboot.
 
 ---
 
@@ -252,7 +243,7 @@ Huge pages are a narrow optimisation with a clear mechanism. They do not make Po
 1. Measure — `grep '^PageTables' /proc/meminfo`. Happy with the number? Stop here.
 2. Disable transparent huge pages.
 3. Get the requirement — `SHOW shared_memory_size_in_huge_pages;` on the running server.
-4. Reserve it at boot in `/etc/sysctl.d/`, plus a margin.
+4. Reserve it at boot in `/etc/sysctl.conf`, plus a margin.
 5. Multi-socket box — check `vm.zone_reclaim_mode = 0`.
 6. Choose `huge_pages = on`, or `try` with an alert.
 7. Restart. Confirm `HugePages_Free` dropped and `huge_pages_status` reads `on`.
@@ -265,12 +256,12 @@ Huge pages are a narrow optimisation with a clear mechanism. They do not make Po
 [^scaling]: The ceiling assumes every backend has read all of `shared_buffers`; 64 MB is the figure for a fully warmed one. A backend only allocates entries for pages it has actually touched, so its table grows with what it has read over its whole lifetime. The longer it lives the closer it drifts to the ceiling — unless it only ever queries a couple of small tables, in which case it stays cheap no matter how long it runs.
 
 
-[^try]: With `try`, PostgreSQL asks for `MAP_HUGETLB` and, if that fails, silently retries the mapping without it. The server starts, looks healthy, and runs on 4 KB pages. The common ways to end up there: `vm.nr_hugepages` never set; set but too small after `shared_buffers` grew; or set with `sysctl -w` and never persisted to `/etc/sysctl.d/`, so it vanished at the last reboot.
+[^try]: With `try`, PostgreSQL asks for `MAP_HUGETLB` and, if that fails, silently retries the mapping without it. The server starts, looks healthy, and runs on 4 KB pages. The common ways to end up there: `vm.nr_hugepages` never set; set but too small after `shared_buffers` grew; or set with `sysctl -w` and never persisted to `/etc/sysctl.conf`, so it vanished at the last reboot.
 
 [^status]: `huge_pages_status` was added in PostgreSQL 17 precisely because `try` gave no way to confirm the outcome. A running instance reports `on` or `off`. The third value, `unknown`, means the status could not be determined — you get it when the parameter is read with `postgres -C` against a stopped server, since nothing has been allocated yet.
 
 
-[^gb]: 1 GB pages cut the entry count further, but they cannot be reserved reliably at runtime — memory is usually too fragmented by then — so they need kernel command-line parameters and a reboot: `hugepagesz=1G hugepages=36`, in that order. You must then also set `huge_page_size = 1GB` in PostgreSQL: without it the server asks for the 2 MB default, your gigabyte pool sits untouched, and with `huge_pages = try` it happens silently. Sizing gets coarse too — the whole shared memory segment rounds up to the next gigabyte, not just `shared_buffers`. On kernels 5.7+, `hugetlb_cma=` is a middle ground: the area is set aside at boot, but pages are allocated from it at runtime and the memory stays usable for movable allocations until then.
+[^calc]: The sum is `CalculateShmemSize()` in [`src/backend/storage/ipc/ipci.c`](https://github.com/postgres/postgres/blob/REL_17_STABLE/src/backend/storage/ipc/ipci.c) — the same per-subsystem `…ShmemSize()` functions that will do the real allocation a moment later, rounded up to a multiple of 8 KB. The GUC is then `size_b / huge_page_size + 1`: integer division truncates, so one page is added back. That `+ 1` means the value already covers the partial page, and gives you exactly one spare page when the size divides evenly. Note also that the total is dominated by `shared_buffers` and its per-buffer overhead — about 8,380 bytes per 8 KB buffer, or **2.3 % on top of the pool** — so on a large server everything else on the list moves the number by fractions of a percent.
 
 
 

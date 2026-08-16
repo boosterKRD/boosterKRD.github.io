@@ -202,7 +202,8 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
     <div class="herostage"><div id="hero"></div></div>
 
     <div class="credits">
-      <a class="main" href="/2026/07/28/postgresql-huge-pages.html">← Back to the post: Huge Pages in PostgreSQL</a>
+      <a class="main" href="/2026/08/08/postgresql-huge-pages.html">← Back to the post: Huge Pages in PostgreSQL</a>
+      <a href="/assets/posts/howtoworks_shmem_sizing.html">How many huge pages do you need?</a>
       <a href="https://www.postgresql.org/docs/current/runtime-config-resource.html" target="_blank" rel="noopener">Postgres: huge_pages</a>
       <a href="https://docs.kernel.org/admin-guide/mm/hugetlbpage.html" target="_blank" rel="noopener">Kernel: HugeTLB</a>
     </div>
@@ -413,7 +414,7 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
 
     <div class="note good"><b>What you get, in order of importance.</b> First, <b>several gigabytes of RAM come back</b>. The page cache can use them, or you can give them to a larger <code>shared_buffers</code>. Second, CPU usage usually drops by <b>5–20%</b>, because the TLB hits more often and the faults stop happening. The RAM is the safe win. The CPU is a bonus, and it depends a lot on how random your access pattern is.</div>
 
-    <div class="note"><b>Explicit, not transparent.</b> Transparent Huge Pages are a different mechanism. The kernel only tries: it gives you huge pages when it can, and it may take them back later. With some settings, the work of building them can also cause latency spikes. An explicit hugetlb reservation is a guarantee. THP is only a chance, so one cannot replace the other. The post covers the settings, the sizing, and the ways a reservation can fail without telling you: <a href="/2026/07/28/postgresql-huge-pages.html">PostgreSQL configuration →</a></div>
+    <div class="note"><b>Explicit, not transparent.</b> Transparent Huge Pages are a different mechanism. The kernel only tries: it gives you huge pages when it can, and it may take them back later. With some settings, the work of building them can also cause latency spikes. An explicit hugetlb reservation is a guarantee. THP is only a chance, so one cannot replace the other. The post covers the settings, the sizing, and the ways a reservation can fail without telling you: <a href="/2026/08/08/postgresql-huge-pages.html">PostgreSQL configuration →</a></div>
   </div>
 </section>
 
@@ -459,7 +460,7 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
     </table>
     </div>
 
-    <div class="note"><b>Measure before and after.</b> <code>grep '^PageTables' /proc/meminfo</code> takes one second and answers the only question that matters. Is this costing you a few hundred megabytes, or tens of gigabytes? If it is a few hundred MB, spend your time on something else. If it is several GB, the migration is worth the work. Everything above only explains that one number. The steps to roll it out are in <a href="/2026/07/28/postgresql-huge-pages.html">the post</a>.</div>
+    <div class="note"><b>Measure before and after.</b> <code>grep '^PageTables' /proc/meminfo</code> takes one second and answers the only question that matters. Is this costing you a few hundred megabytes, or tens of gigabytes? If it is a few hundred MB, spend your time on something else. If it is several GB, the migration is worth the work. Everything above only explains that one number. The steps to roll it out are in <a href="/2026/08/08/postgresql-huge-pages.html">the post</a>.</div>
   </div>
 </section>
 

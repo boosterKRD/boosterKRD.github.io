@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How many huge pages does PostgreSQL need? — the sizing calculator</title>
+<meta name="description" content="Where shared_memory_size_in_huge_pages comes from in the PostgreSQL source, an interactive calculator for every setting that moves it, and how much margin to put into vm.nr_hugepages.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0d1226; --ink2:#151d38; --ink3:#1e2950; --line:#2b3866; --line2:#3b4a80;
+  --text:#dbe1f5; --dim:#8e99c4; --faint:#5d6894;
+  --mem:#3ecfb2; --be:#5aa9ff; --miss:#ff5f7e; --pt:#ffd166;
+  --huge:#a97bff; --ok:#7ee787; --warn:#ffab3d;
+  --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--ink); color:var(--text);
+  font-family:var(--body); font-size:17px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(1100px 600px at 12% -8%, rgba(169,123,255,.10), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(62,207,178,.09), transparent 62%);
+  background-attachment:fixed;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.12;letter-spacing:-.02em;margin:0}
+p{margin:0 0 1em}
+a{color:var(--mem)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+code{background:rgba(255,255,255,.06);padding:.12em .38em;border-radius:5px;color:#e9eefc}
+
+nav{position:sticky;top:0;z-index:60;background:rgba(13,18,38,.82);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:18px;height:56px}
+nav .brand{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap}
+nav .brand span{color:var(--huge)}
+nav ol{display:flex;gap:2px;list-style:none;margin:0;padding:0;overflow-x:auto;scrollbar-width:none}
+nav ol::-webkit-scrollbar{display:none}
+nav a{font-family:var(--mono);font-size:12px;color:var(--dim);text-decoration:none;padding:6px 9px;border-radius:8px;white-space:nowrap}
+nav a:hover{color:var(--text);background:var(--ink3)}
+
+header{padding:70px 0 40px;position:relative}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--huge);margin-bottom:16px}
+h1{font-size:clamp(36px,5.8vw,62px)}
+h1 em{font-style:normal;color:var(--huge)}
+.lede{font-size:clamp(18px,2.2vw,21px);color:var(--dim);max-width:64ch;margin-top:22px}
+.lede strong{color:var(--text);font-weight:600}
+.credits{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;font-family:var(--mono);font-size:12.5px}
+.credits a{display:inline-flex;align-items:center;gap:7px;color:var(--dim);text-decoration:none;border:1px solid var(--line);
+  border-radius:999px;padding:6px 13px;transition:.18s}
+.credits a:hover{border-color:var(--mem);color:var(--text)}
+.credits a.main{border-color:var(--mem);color:var(--text)}
+
+section{padding:60px 0;border-top:1px solid var(--line)}
+.snum{font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:.16em;margin-bottom:12px}
+h2{font-size:clamp(26px,3.4vw,36px);margin-bottom:16px}
+h2 .tint{color:var(--huge)}
+.sub{color:var(--dim);max-width:68ch;font-size:17.5px}
+h3{font-size:19px;margin:32px 0 10px}
+
+.panel{border:1px solid var(--line);border-radius:var(--r);background:var(--ink2);margin-top:26px;overflow:hidden}
+.panel .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+.panel .bar .ttl{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:auto}
+
+button,select{font-family:var(--body);font-size:14px;font-weight:500;color:var(--text);background:var(--ink3);
+  border:1px solid var(--line2);border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
+button:hover,select:hover{border-color:var(--mem);color:#fff}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--huge);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:transparent;padding:7px 13px}
+.seg button.on{background:var(--ink3);color:#fff;box-shadow:inset 0 -2px 0 var(--huge)}
+.spacer{flex:1}
+
+.note{border-left:3px solid var(--warn);background:rgba(255,171,61,.07);padding:14px 18px;border-radius:0 10px 10px 0;
+  margin:24px 0;font-size:16px;color:var(--dim)}
+.note b{color:var(--warn)}
+.note.info{border-left-color:var(--be);background:rgba(90,169,255,.07)}
+.note.info b{color:var(--be)}
+.note.good{border-left-color:var(--ok);background:rgba(126,231,135,.07)}
+.note.good b{color:var(--ok)}
+.note.bad{border-left-color:var(--miss);background:rgba(255,95,126,.07)}
+.note.bad b{color:var(--miss)}
+.note :last-child{margin-bottom:0}
+
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+@media(max-width:820px){.grid3{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);border-radius:12px;padding:18px;background:var(--ink2)}
+.card h4{font-family:var(--display);font-size:16px;margin:0 0 8px}
+.card p{font-size:15px;color:var(--dim);margin:0}
+
+pre{font-family:var(--mono);font-size:13px;line-height:1.6;background:#080c1c;border:1px solid var(--line);
+  border-radius:10px;padding:14px 16px;overflow-x:auto;color:#c3ccec;margin:16px 0}
+pre .k{color:var(--warn)} pre .c{color:var(--faint)} pre .s{color:var(--mem)} pre .h{color:var(--pt)}
+.termbox{margin:18px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#080c1c}
+.termbox .hd{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--huge);
+  padding:7px 15px;background:rgba(169,123,255,.08);border-bottom:1px solid var(--line)}
+.termbox pre{margin:0;border:0;border-radius:0;background:transparent}
+
+table.kv{width:100%;border-collapse:collapse;margin-top:20px;font-size:15px}
+table.kv td,table.kv th{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}
+table.kv th{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:500}
+table.kv td.num,table.kv th.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+table.kv td.mono{font-family:var(--mono);font-size:13px}
+.tblwrap{overflow-x:auto}
+
+/* ---------- calculator ---------- */
+.calc{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:900px){.calc{grid-template-columns:1fr}}
+.calcL{border-right:1px solid var(--line)}
+@media(max-width:900px){.calcL{border-right:0;border-bottom:1px solid var(--line)}}
+.ctl{display:grid;grid-template-columns:1fr;gap:4px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.ctl .row{display:flex;align-items:baseline;gap:10px}
+.ctl label{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--dim);margin-right:auto}
+.ctl output{font-family:var(--mono);font-size:15px;color:var(--text);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--huge);background:transparent;margin:2px 0 0}
+input[type=number]{width:100%;font-family:var(--mono);font-size:13px;color:var(--text);background:#080c1c;
+  border:1px solid var(--line2);border-radius:7px;padding:5px 8px}
+details{border-top:1px solid var(--line)}
+details>summary{cursor:pointer;list-style:none;padding:12px 16px;font-family:var(--mono);font-size:12px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+details>summary::-webkit-details-marker{display:none}
+details>summary:hover{color:var(--text)}
+details[open]>summary{color:var(--huge)}
+.adv{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;padding:4px 16px 16px}
+@media(max-width:520px){.adv{grid-template-columns:1fr}}
+.adv .f{display:flex;flex-direction:column;gap:3px}
+.adv .f span{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.04em}
+
+.big{padding:18px 18px 6px}
+.big .k{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.big .v{font-family:var(--display);font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.1;margin-top:2px;color:var(--huge)}
+.big .d{font-family:var(--mono);font-size:12.5px;color:var(--dim);margin-top:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--line);margin-top:14px}
+.two .c{padding:14px 18px}
+.two .c:first-child{border-right:1px solid var(--line)}
+.two .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.two .v{font-family:var(--display);font-size:24px;font-weight:700;margin-top:3px}
+.two .v.ok{color:var(--ok)} .two .v.warn{color:var(--warn)}
+.two .d{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-top:4px}
+
+.stack{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:16px 18px 6px;background:#080c1c;border:1px solid var(--line)}
+.stack i{display:block;height:100%;transition:width .35s ease}
+.bd{padding:6px 18px 18px}
+.bd table{width:100%;border-collapse:collapse;font-size:14px}
+.bd td{padding:5px 0;border-bottom:1px solid rgba(43,56,102,.6)}
+.bd td.n{font-family:var(--mono);text-align:right;white-space:nowrap;color:var(--dim)}
+.bd td.p{font-family:var(--mono);text-align:right;white-space:nowrap;color:var(--faint);width:56px}
+.bd .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:9px;vertical-align:baseline}
+.tip{border-bottom:1px dashed var(--line2);cursor:help;position:relative;outline:none}
+.tip:hover,.tip:focus{color:#fff;border-bottom-color:var(--huge)}
+.tip::after{
+  content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 9px);z-index:40;
+  width:max-content;max-width:min(360px,62vw);padding:9px 11px;
+  background:#070b1a;border:1px solid var(--line2);border-radius:9px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--text);white-space:pre-line;
+  box-shadow:0 10px 30px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(3px);
+  transition:opacity .12s,transform .12s}
+.tip::before{
+  content:"";position:absolute;left:14px;bottom:calc(100% + 4px);z-index:41;width:9px;height:9px;
+  background:#070b1a;border-right:1px solid var(--line2);border-bottom:1px solid var(--line2);
+  transform:rotate(45deg);opacity:0;visibility:hidden;transition:opacity .12s}
+.tip:hover::after,.tip:focus::after,.tip:hover::before,.tip:focus::before{
+  opacity:1;visibility:visible;transform:translateY(0) }
+.tip:hover::before,.tip:focus::before{transform:rotate(45deg)}
+.bd .hint{font-family:var(--mono);font-size:11px;color:var(--faint);padding:0 0 8px}
+.out{border-top:1px solid var(--line)}
+.warnbox{margin:0;border-top:1px solid var(--line);padding:12px 18px;font-size:14.5px;color:var(--dim);
+  background:rgba(0,0,0,.16);min-height:60px}
+.warnbox b{color:var(--warn)}
+.warnbox .tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  display:block;margin-bottom:3px}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand">SHMEM<span>_SIZING</span></div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">PostgreSQL · shared memory · hugetlb · sizing</div>
+    <h1>How many huge pages<br>does PostgreSQL <em>actually need?</em></h1>
+    <p class="lede">Since PostgreSQL 15 the server answers that itself: <code>shared_memory_size_in_huge_pages</code>. And the answer is dominated by one setting — as a rule of thumb, shared memory is <code>shared_buffers</code> plus about <b>2 % of overhead for describing it</b>, plus a per-backend tail. Everything else is a footnote until you make it extreme, which is exactly why the sizing is boring and the failure modes are not. This page computes that number for a configuration you do not run yet, and answers the question the docs skip — <strong>how much margin to put into <code>vm.nr_hugepages</code>, and why the honest answer is "not much".</strong></p>
+
+    <div class="credits">
+      <a class="main" href="/2026/08/08/postgresql-huge-pages.html">← Back to the post: Huge Pages in PostgreSQL</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 02 CALCULATOR ============ -->
+<section id="calc">
+  <div class="wrap">
+    <div class="snum">THE CALCULATOR</div>
+    <h2>Put in <span class="tint">your own numbers</span></h2>
+    <p class="sub">The same arithmetic, reimplemented from the source: the per-buffer structures, the lock and predicate-lock hash tables (through dynahash's real <code>hash_estimate_size()</code>), the SLRU caches with their auto-tuning, WAL buffers, the per-backend arrays. The server does the same sum in <code>CalculateShmemSize()</code> and then reports <code>size_b / huge_page_size + 1</code> — integer division, with one page added back for the remainder. Useful when the configuration you want to size for is not the one currently running — a bigger <code>shared_buffers</code>, or a server you have not built yet.</p>
+
+    <div class="note info"><b>What this is for.</b> An illustration, not an oracle. Use it to watch each GUC move the requirement, and to settle the two things that actually matter: the number is <code>shared_buffers</code> plus roughly 2 % of overhead, and everything else shifts it by a handful of pages. Which is the whole argument against padding <code>vm.nr_hugepages</code> by 10 % or more "just in case" — that is not caution, it is a few gigabytes taken away from the page cache to cover a number the server already knows exactly. Take the real value from the running instance with <code>SHOW shared_memory_size_in_huge_pages</code>, add a percent or two, and recompute when the configuration changes.</div>
+
+    <div class="panel">
+      <div class="bar">
+        <span class="ttl">Configuration</span>
+        <div class="seg" id="ver">
+          <button data-v="17" class="on">PG 15–17</button>
+          <button data-v="18">PG 18</button>
+        </div>
+        <span class="ttl" style="margin:0 0 0 auto">2 MB pages</span>
+      </div>
+
+      <div class="calc">
+        <div class="calcL">
+          <div class="ctl">
+            <div class="row"><label for="c-sb">shared_buffers</label><output id="o-sb">32 GB</output></div>
+            <input type="range" id="c-sb" min="0" max="17" step="1" value="4">
+          </div>
+          <div class="ctl">
+            <div class="row"><label for="c-mc">max_connections</label><output id="o-mc">300</output></div>
+            <input type="range" id="c-mc" min="0" max="21" step="1" value="4">
+          </div>
+          <div class="ctl">
+            <div class="row"><label for="c-lk">max_locks_per_transaction</label><output id="o-lk">64</output></div>
+            <input type="range" id="c-lk" min="4" max="12" step="1" value="6">
+          </div>
+          <div class="ctl">
+            <div class="row"><label for="c-mg">margin over the computed value</label><output id="o-mg">2 %</output></div>
+            <input type="range" id="c-mg" min="0" max="20" step="1" value="2">
+          </div>
+
+          <details open>
+            <summary>everything else that counts</summary>
+            <div class="adv">
+              <div class="f"><span>max_worker_processes</span><input type="number" id="c-mwp" value="8" min="0" max="1000"></div>
+              <div class="f"><span>max_wal_senders</span><input type="number" id="c-mws" value="10" min="0" max="1000"></div>
+              <div class="f" id="f-avw"><span>autovacuum_max_workers</span><input type="number" id="c-avw" value="3" min="1" max="1000"></div>
+              <div class="f" id="f-avs" style="display:none"><span>autovacuum_worker_slots (PG 18, replaces autovacuum_max_workers)</span><input type="number" id="c-avs" value="16" min="1" max="1000"></div>
+              <div class="f"><span>max_prepared_transactions</span><input type="number" id="c-mpt" value="0" min="0" max="10000"></div>
+              <div class="f"><span>max_pred_locks_per_transaction</span><input type="number" id="c-pl" value="64" min="10" max="8192"></div>
+              <div class="f"><span>track_activity_query_size (bytes)</span><input type="number" id="c-tq" value="1024" min="100" max="1048576"></div>
+              <div class="f"><span>wal_buffers (MB, 0 = auto, server max 2047)</span><input type="number" id="c-wb" value="0" min="0" max="2047"></div>
+              <div class="f"><span>min_dynamic_shared_memory (MB)</span><input type="number" id="c-dsm" value="0" min="0" max="65536"></div>
+              <div class="f"><span>transaction_buffers (8 kB blocks, 0 = auto)</span><input type="number" id="c-tb" value="0" min="0" max="131072"></div>
+              <div class="f" id="f-io" style="display:none"><span id="lbl-io">io_max_concurrency — I/Os per backend (-1 = auto, manual 1…1024)</span><input type="number" id="c-io" value="-1" min="-1" max="1024"></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="calcR">
+          <div class="big">
+            <div class="k">shared_memory_size_in_huge_pages</div>
+            <div class="v" id="o-pages">—</div>
+            <div class="d" id="o-pagesd">—</div>
+          </div>
+          <div class="two">
+            <div class="c">
+              <div class="k">shared_memory_size</div>
+              <div class="v ok" id="o-size">—</div>
+              <div class="d" id="o-sized">—</div>
+            </div>
+            <div class="c">
+              <div class="k">reserve — vm.nr_hugepages</div>
+              <div class="v warn" id="o-res">—</div>
+              <div class="d" id="o-resd">—</div>
+            </div>
+          </div>
+          <div class="out">
+            <div class="stack" id="o-stack"></div>
+            <div class="bd">
+              <div class="hint">hover a row for the matching pg_shmem_allocations names</div>
+              <table id="o-bd"></table></div>
+          </div>
+          <div class="warnbox" id="o-warn"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="termbox">
+      <div class="hd">what to write on the machine</div>
+<pre id="o-conf">—</pre>
+    </div>
+
+    <div class="note info"><b>Only the main segment.</b> This number covers the one anonymous mapping the postmaster creates at startup — the one <code>huge_pages</code> applies to. Memory allocated later per backend (<code>work_mem</code>, <code>maintenance_work_mem</code>, catalog and plan caches) and the DSM segments a parallel query creates on the fly are <i>not</i> in it, and they do not use huge pages. The one exception is <code>min_dynamic_shared_memory</code>: that area is carved out of the main segment, so it is both counted here and backed by huge pages.</div>
+
+
+    <div class="credits" style="margin-top:34px">
+      <a class="main" href="/2026/08/08/postgresql-huge-pages.html">← The full post: configuration, sizing, and the ways a reservation fails silently</a>
+      <a href="https://github.com/postgres/postgres/blob/REL_17_STABLE/src/backend/storage/ipc/ipci.c" target="_blank" rel="noopener">ipci.c</a>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============ TESTS ============ -->
+<section id="tests">
+  <div class="wrap">
+    <div class="snum">THE CHECK</div>
+    <h2>Calculator versus <span class="tint">postgres -C</span></h2>
+    <p class="sub">Ten configurations run through the server itself on PostgreSQL 17, sweeping the full range the sliders allow — <code>shared_buffers</code> from 8 GB to 1 TB, <code>max_connections</code> from 100 to 10 000, <code>max_locks_per_transaction</code> from 64 to 256 — then the same input put through the calculator. Every other setting stays at its default. The command is the one from the top of the page, and it needs no memory: it computes the number and exits.</p>
+
+    <p class="sub">What is compared is the <b>requirement</b> — the big number in the calculator, <code>shared_memory_size_in_huge_pages</code>. The margin slider is deliberately left out of it: <code>postgres -C</code> reports what the server needs, while the <code>vm.nr_hugepages</code> line is that number plus whatever slack you choose to add on top.</p>
+
+    <div class="termbox">
+      <div class="hd">how the right-hand column was produced</div>
+<pre><span class="c">$</span> postgres -D /tmp/d -C shared_memory_size_in_huge_pages \
+      -c shared_buffers=1024GB -c max_connections=10000 -c max_locks_per_transaction=4096 …</pre>
+    </div>
+
+    <div class="tblwrap">
+    <table class="kv">
+      <tr><th>Configuration</th><th class="num">calculator</th><th class="num">postgres -C</th><th class="num">Δ</th><th class="num">Δ memory</th></tr>
+      <tr><td class="mono">shared_buffers 8 GB · max_connections 100 · locks 64</td><td class="num">4&thinsp;217</td><td class="num">4&thinsp;218</td><td class="num">−0.02&thinsp;%</td><td class="num">−2&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 8 GB · max_connections 10&thinsp;000 · locks 256</td><td class="num">4&thinsp;825</td><td class="num">4&thinsp;826</td><td class="num">−0.02&thinsp;%</td><td class="num">−2&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 32 GB · max_connections 100 · locks 64</td><td class="num">16&thinsp;784</td><td class="num">16&thinsp;788</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 32 GB · max_connections 1&thinsp;000 · locks 128</td><td class="num">16&thinsp;817</td><td class="num">16&thinsp;821</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 32 GB · max_connections 10&thinsp;000 · locks 256</td><td class="num">17&thinsp;392</td><td class="num">17&thinsp;396</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 128 GB · max_connections 500 · locks 64</td><td class="num">67&thinsp;063</td><td class="num">66&thinsp;975</td><td class="num">+0.13&thinsp;%</td><td class="num">+176&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 128 GB · max_connections 5&thinsp;000 · locks 256</td><td class="num">67&thinsp;356</td><td class="num">67&thinsp;268</td><td class="num">+0.13&thinsp;%</td><td class="num">+176&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 512 GB · max_connections 1&thinsp;000 · locks 128</td><td class="num">268&thinsp;159</td><td class="num">267&thinsp;352</td><td class="num">+0.30&thinsp;%</td><td class="num">+1&thinsp;614&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 1 TB · max_connections 100 · locks 64</td><td class="num">536&thinsp;224</td><td class="num">534&thinsp;457</td><td class="num">+0.33&thinsp;%</td><td class="num">+3&thinsp;534&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 1 TB · max_connections 10&thinsp;000 · locks 256</td><td class="num">536&thinsp;832</td><td class="num">535&thinsp;065</td><td class="num">+0.33&thinsp;%</td><td class="num">+3&thinsp;534&thinsp;MB</td></tr>
+    </table>
+    </div>
+
+
+
+    <div class="note"><b>Which way it errs.</b> On pools up to 32 GB the calculator lands a few pages <i>under</i> the server; from 128 GB up it goes over — +0.13 % at 128 GB, +0.33 % at 1 TB, which is 3.5 GB worth of pages on a terabyte pool. The error follows the pool size, not the connection count.</div>
+  </div>
+</section>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- dynahash, from src/backend/utils/hash/dynahash.c ---------- */
+function MAXALIGN(x){return Math.ceil(x/8)*8;}
+function nextPow2(n){var p=1;while(p<n)p*=2;return p;}
+function nelemAlloc(entrysize){
+  var es=MAXALIGN(16)+MAXALIGN(entrysize), a=128, n;
+  do{a*=2;n=Math.floor(a/es);}while(n<32);
+  return n;
+}
+function hes(num,entrysize){                    /* hash_estimate_size() */
+  if(num<1)num=1;
+  var nBuckets=nextPow2(num);
+  var nSeg=nextPow2(Math.floor((nBuckets-1)/256)+1);
+  var nDir=256; while(nDir<nSeg) nDir*=2;
+  var size=MAXALIGN(88)+nDir*8+nSeg*MAXALIGN(256*8);
+  var es=MAXALIGN(16)+MAXALIGN(entrysize), a=nelemAlloc(entrysize);
+  return size+(Math.floor((num-1)/a)+1)*a*es;
+}
+function autotune(nb,div,cap){                  /* SimpleLruAutotuneBuffers() */
+  var v=Math.floor(nb/div); v-=v%16;
+  return Math.min(cap-cap%16, Math.max(16,v));
+}
+
+/* Everything above is transcribed from the source. What follows cannot be: the
+   remaining ~35 …ShmemSize() functions are expressed in sizeof(struct), which is a
+   compile-time value, not a number written anywhere. These five are measured — as the
+   slope of `postgres -C shared_memory_size` over ~90 configurations — and then checked
+   against pg_shmem_allocations, which names most of them on a running server (see §04).
+
+   perStatus  951 B of named rows (Backend Status Array 432 + SSL 324 + GSS 67 +
+              application_name 64 + client hostname 64) + 46 B of allocation rounding
+   perBackend PGPROC ~839 + PredXactList 10×168 + RWConflictPool 50×48 + KnownAssignedXids
+              325 + ProcSignal 128 + sinval, 2PC, async, PMSignal, BTree vacuum, Proc Array
+   perSlru    168 B per 8 kB slot: bank locks, page_status / page_number / lru_count arrays
+   perBuf     alignment rounding inside the buffer manager's hash element allocation
+   base       100 KB documented slop + ~33 fixed allocations (Shared Memory Stats 280 KB,
+              Background Worker Data, AutoVacuum Data, WalSnd/WalRcv Ctl, Control File …)  */
+var VER={
+  17:{naux:7,  base:635963, perBackend:5004, perStatus:997,  perSlru:168, perBuf:22, aio:0},
+  18:{naux:39, base:740559, perBackend:5191, perStatus:1459, perSlru:168, perBuf:22, aio:528}
+};
+
+function calc(c){
+  var K=VER[c.ver], nb=Math.floor(c.sb/8192);
+  var maxBackends=c.mc+(c.ver>=18?c.avs:c.avw)+c.mwp+c.mws+1;
+  var B=maxBackends+c.mpt, slots=maxBackends+K.naux;
+  var p={};
+
+  p.pool=nb*8192;
+  p.bufmgr=nb*(64+16+20+K.perBuf)+4352+hes(nb+128,32);
+
+  var lk=hes(c.lk*B,152)+hes(2*c.lk*B,64);
+  p.locks=lk+Math.floor(lk/10);
+
+  var pl=hes(c.pl*B,40)+hes(2*c.pl*B,56);
+  p.pred=pl+Math.floor(pl/10)+hes(10*B,16);
+
+  p.backends=B*K.perBackend+slots*(K.perStatus+c.tq);
+
+  var tb=c.tb?Math.min(Math.max(16,c.tb),131072):autotune(nb,512,1024);
+  var au=autotune(nb,512,1024);
+  var slruSlots=tb+2*au+16+32+16+32;
+  p.slru=tb*(8192+8192)+2*au*8192+(16+32+16+32)*8192+slruSlots*K.perSlru;
+
+  var wb=c.wb?c.wb*128:Math.min(Math.max(Math.floor(nb/32),8),2048);
+  p.wal=wb*8200+8192;
+
+  /* io_max_concurrency = -1 asks the server to auto-tune, AioChooseMaxConcurrency():
+     one backend may not have more IOs in flight than it could pin buffers, capped at 64 */
+  var conc=0;
+  p.aio=0;
+  if(c.ver>=18){
+    conc=c.io>0?c.io:Math.min(64,Math.max(1,Math.floor(nb/slots)));
+    p.aio=slots*conc*K.aio;
+  }
+  p.dsm=c.dsm;
+  p.other=K.base;
+
+  var total=0; for(var k in p) total+=p[k];
+  total=Math.floor(total); total+=8192-(total%8192);   /* ipci.c rounds up to a page, always */
+  return {parts:p,total:total,backends:B,slots:slots,walBlocks:wb,conc:conc};
+}
+
+/* ---------- ui ---------- */
+var ROWS=[
+  ['pool',    'shared_buffers — the pool itself',            '#a97bff',
+   'pg_shmem_allocations:\nBuffer Blocks\n\nsource:\nBufferShmemSize(), NBuffers × BLCKSZ'],
+  ['bufmgr',  'buffer descriptors, lookup table, checkpoint','#5aa9ff',
+   'pg_shmem_allocations:\nBuffer Descriptors\nBuffer IO Condition Variables\nCheckpoint BufferIds\nShared Buffer Lookup Table\nBuffer Strategy Status\n\nsource:\nBufferShmemSize(), StrategyShmemSize(), BufTableShmemSize()'],
+  ['backends','per-backend structures (PGPROC, status)',     '#3ecfb2',
+   'pg_shmem_allocations:\nPGPROC structures (named on PG 18 only)\nProc Array\nKnownAssignedXids\nBackend Status Array\nBackend Activity Buffer\nBackend Application Name Buffer\nBackend Client Host Name Buffer\nBackend SSL / GSS Status Buffer\nshmInvalBuffer\nProcSignal\nPredXactList\nRWConflictPool\n\nsource:\nProcGlobalShmemSize(), ProcArrayShmemSize(), BackendStatusShmemSize(), SInvalShmemSize(), ProcSignalShmemSize()'],
+  ['locks',   'lock manager tables',                         '#ffd166',
+   'pg_shmem_allocations:\nLOCK hash\nPROCLOCK hash\n\nsource:\nLockShmemSize(), including its 10 % slack'],
+  ['pred',    'predicate lock tables (SSI)',                 '#ffab3d',
+   'pg_shmem_allocations:\nPREDICATELOCKTARGET hash\nPREDICATELOCK hash\nSERIALIZABLEXID hash\n\nsource:\nPredicateLockShmemSize(). Its PredXactList and RWConflictPool are counted in the per-backend row above'],
+  ['slru',    'SLRU caches (clog, subtrans, multixact …)',   '#ff5f7e',
+   'pg_shmem_allocations:\ntransaction\nsubtransaction\ncommit_timestamp\nmultixact_offset\nmultixact_member\nnotify\nserializable\n\nsource:\nSimpleLruShmemSize() for each of the seven'],
+  ['wal',     'wal_buffers',                                 '#7ee787',
+   'pg_shmem_allocations:\nXLOG Ctl\n\nsource:\nXLOGShmemSize()'],
+  ['aio',     'AIO handles (PG 18)',                         '#c48bff',
+   'pg_shmem_allocations:\nAioHandle\nAioHandleIOV\nAioHandleData\nAioBackend\n\nsource:\nAioShmemSize(). Allocated whatever io_method is set to — sync costs exactly as much as worker'],
+  ['dsm',     'min_dynamic_shared_memory',                   '#7f8dc4',
+   'pg_shmem_allocations:\nunnamed — it is the DSM area carved out of the segment\n\nsource:\ndsm_estimate_size()'],
+  ['other',   'fixed structures and slop',                   '#4b5680',
+   'pg_shmem_allocations:\nShared Memory Stats\nBackground Worker Data\nAutoVacuum Data\nWal Sender Ctl\nWal Receiver Ctl\nReplicationSlot Ctl\nFast Path Strong Relation Lock Data\nControl File\nand ~25 more fixed rows\n\nsource:\nthe literal 100 KB slop in CalculateShmemSize(), plus every small …ShmemSize()']
+];
+var SB=[8192,12288,16384,24576,32768,49152,65536,98304,131072,163840,196608,262144,327680,393216,524288,655360,786432,1048576];
+/* shared_buffers ladder, MB */
+var MC=[100,150,200,250,300,400,500,600,750,900,1000,1200,1500,1800,2000,2500,3000,4000,5000,6000,8000,10000];
+
+function $(id){return document.getElementById(id);}
+function fmtB(b){
+  if(b>=1073741824) return (b/1073741824).toFixed(b>=10737418240?1:2)+' GB';
+  if(b>=1048576) return (b/1048576).toFixed(b>=104857600?0:1)+' MB';
+  if(b>=1024) return (b/1024).toFixed(0)+' KB';
+  return b+' B';
+}
+function fmtN(n){return Math.round(n).toLocaleString('en-US').replace(/,/g,' ');}
+function fmtSB(mb){return mb>=1048576?(mb/1048576)+' TB':(mb>=1024?(mb/1024)+' GB':mb+' MB');}
+
+var ver=17;
+var HP=2*1048576;                              /* 2 MB huge pages */
+
+function readCfg(){
+  var sbMB=SB[Math.min(+$('c-sb').value,SB.length-1)];
+  var mc=MC[Math.min(+$('c-mc').value,MC.length-1)];
+  return {
+    ver:ver, sb:sbMB*1048576, mc:mc,
+    lk:Math.pow(2,+$('c-lk').value),
+    pl:Math.max(10,+$('c-pl').value||64),
+    mwp:+$('c-mwp').value||0, mws:+$('c-mws').value||0,
+    avw:Math.max(1,+$('c-avw').value||3), avs:Math.max(1,+$('c-avs').value||16),
+    mpt:+$('c-mpt').value||0, tq:Math.max(100,+$('c-tq').value||1024),
+    wb:+$('c-wb').value||0, dsm:(+$('c-dsm').value||0)*1048576,
+    tb:+$('c-tb').value||0, io:($('c-io').value===''?-1:+$('c-io').value),
+    margin:+$('c-mg').value, sbMB:sbMB
+  };
+}
+
+function roundNice(n){
+  if(n<100) return Math.ceil(n/10)*10;
+  if(n<2000) return Math.ceil(n/50)*50;
+  if(n<20000) return Math.ceil(n/100)*100;
+  if(n<200000) return Math.ceil(n/500)*500;
+  return Math.ceil(n/1000)*1000;
+}
+
+function upd(){
+  var c=readCfg(), r=calc(c);
+  var pages=Math.floor(r.total/HP)+1;
+
+  $('o-sb').textContent=fmtSB(c.sbMB);
+  $('o-mc').textContent=fmtN(c.mc);
+  $('o-lk').textContent=c.lk;
+  $('o-mg').textContent=c.margin+' %';
+
+  if(c.ver>=18)
+    $('lbl-io').textContent='io_max_concurrency — I/Os per backend (-1 = auto → '+r.conc+', manual 1…1024)';
+
+  $('o-pages').textContent=fmtN(pages);
+  $('o-pagesd').textContent='× 2 MB = '+fmtB(pages*HP)+' locked away';
+  $('o-size').textContent=fmtB(Math.ceil(r.total/1048576)*1048576);
+  $('o-sized').textContent='SHOW shared_memory_size → '+fmtN(Math.ceil(r.total/1048576))+' MB';
+
+  var reserve=c.margin===0?pages:roundNice(pages*(1+c.margin/100));
+  $('o-res').textContent=fmtN(reserve);
+  $('o-resd').textContent=reserve>pages
+      ? '+'+fmtN(reserve-pages)+(reserve-pages===1?' page (':' pages (')+fmtB((reserve-pages)*HP)+') of headroom'
+      : 'exactly the computed requirement — no headroom at all';
+
+  /* breakdown */
+  var stack='',bd='';
+  ROWS.forEach(function(row){
+    var v=r.parts[row[0]]||0;
+    if(v<=0) return;
+    var pct=v/r.total*100;
+    stack+='<i style="width:'+pct.toFixed(3)+'%;background:'+row[2]+'"></i>';
+    bd+='<tr><td><span class="sw" style="background:'+row[2]+'"></span>'+
+        '<span class="tip" tabindex="0" data-tip="'+row[3]+'">'+row[1]+'</span>'+
+        '</td><td class="n">'+fmtB(v)+'</td><td class="p">'+(pct<0.1?'<0.1':pct.toFixed(1))+'%</td></tr>';
+  });
+  $('o-stack').innerHTML=stack;
+  $('o-bd').innerHTML=bd;
+
+  /* config snippet */
+  var conf='<span class="c"># /etc/sysctl.conf</span>\n'+
+    'vm.nr_hugepages = <span class="h">'+reserve+'</span>\n\n'+
+    '<span class="c"># postgresql.conf</span>\n'+
+    'huge_pages = <span class="k">on</span>\n'+
+    'shared_buffers = <span class="k">'+fmtSB(c.sbMB).replace(' ','')+'</span>\n'+
+    'max_connections = <span class="k">'+c.mc+'</span>';
+  $('o-conf').innerHTML=conf;
+
+  /* narration */
+  var tag,msg;
+  var overhead=(r.total-r.parts.pool)/r.parts.pool*100;
+  if(c.dsm>0){
+    tag='min_dynamic_shared_memory is inside this number';
+    msg='<b>'+fmtB(c.dsm)+'</b> of the segment is the DSM area for parallel query. That is the only way to get huge pages under parallel workers — but it is reserved whether or not a parallel query ever runs.';
+  } else if(overhead>6){
+    tag='the tail is bigger than usual';
+    msg='Non-pool structures are <b>'+overhead.toFixed(1)+'%</b> on top of <code>shared_buffers</code> here, against ~2.3 % on a default configuration. '+
+        'With '+fmtN(c.mc)+' connections and <code>max_locks_per_transaction = '+c.lk+'</code>, the lock tables alone are <b>'+fmtB(r.parts.locks)+'</b>.';
+  } else {
+    tag='reserve this, and re-read it after config changes';
+    msg='<b>'+fmtN(pages)+'</b> pages is the requirement; <b>'+fmtN(reserve)+'</b> is what to write into <code>vm.nr_hugepages</code>. '+
+        'The overhead above <code>shared_buffers</code> is <b>'+overhead.toFixed(1)+'%</b>. Every page you reserve leaves the general pool for good, so do not round up further "just in case" — recompute instead.';
+  }
+  $('o-warn').innerHTML='<span class="tag">'+tag+'</span>'+msg;
+}
+
+['c-sb','c-mc','c-lk','c-mg','c-mwp','c-mws','c-avw','c-avs','c-mpt','c-pl','c-tq','c-wb','c-dsm','c-tb','c-io']
+  .forEach(function(id){var e=$(id);if(e){e.addEventListener('input',upd);e.addEventListener('change',upd);}});
+
+Array.prototype.forEach.call($('ver').querySelectorAll('button'),function(b){
+  b.addEventListener('click',function(){
+    Array.prototype.forEach.call($('ver').querySelectorAll('button'),function(x){x.classList.remove('on');});
+    b.classList.add('on'); ver=+b.dataset.v;
+    $('f-avw').style.display=ver>=18?'none':'';
+    $('f-avs').style.display=ver>=18?'':'none';
+    $('f-io').style.display=ver>=18?'':'none';
+    upd();
+  });
+});
+/* slider ranges depend on the tables above */
+$('c-sb').max=SB.length-1;
+$('c-mc').max=MC.length-1;
+upd();
+})();
+</script>
+</body>
+</html>
