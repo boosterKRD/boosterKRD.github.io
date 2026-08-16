@@ -124,6 +124,8 @@ The [`huge_pages` setting](https://www.postgresql.org/docs/current/runtime-confi
 | `on` | Require huge pages; **refuse to start** if unavailable |
 | `off` | Never use huge pages |
 
+![What happens at startup, depending on the reservation and the setting](/assets/images/hugepages-outcomes.png)
+
 `on` fails loudly at startup if the reservation is missing. `try` always starts, but can fall back to 4 KB pages without telling you — so **if you use `try`, monitor separately that huge pages are actually in use.**[^try]
 
 Since PostgreSQL 17 that check is a one-liner — [`huge_pages_status`](https://pgpedia.info/h/huge_pages_status.html) reports what the server actually got, rather than what it asked for:
@@ -192,6 +194,8 @@ sysctl -w vm.nr_hugepages=17000
 grep HugePages_Total /proc/meminfo    # check again
 ```
 
+![When a runtime reservation comes up short](/assets/images/hugepages-fragmentation.png)
+
 Still short — **reboot the machine**, and the value you wrote to `/etc/sysctl.conf` above will be applied early in boot, while memory is still largely unfragmented.
 
 > ⚠️ **On a multi-socket server, check that `vm.zone_reclaim_mode` is `0`** — with `1` the kernel throws away local page cache instead of taking free memory from a neighbouring node, which costs a database far more than the remote access it saves. It has been the kernel default since Linux 3.16, so this is a check for inherited machines and tuning profiles, not something you normally set.
@@ -246,7 +250,7 @@ Huge pages are a narrow optimisation with a clear mechanism. They do not make Po
 4. Reserve it at boot in `/etc/sysctl.conf`, plus a margin.
 5. Multi-socket box — check `vm.zone_reclaim_mode = 0`.
 6. Choose `huge_pages = on`, or `try` with an alert.
-7. Restart. Confirm `HugePages_Free` dropped and `huge_pages_status` reads `on`.
+7. Restart if needed. Confirm `HugePages_Free` dropped and `huge_pages_status` reads `on`.
 8. Re-measure, compare with step 1.
 
 ---
