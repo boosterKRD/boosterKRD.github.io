@@ -252,6 +252,7 @@ details[open]>summary{color:var(--huge)}
               <div class="f"><span>wal_buffers (MB, 0 = auto, server max 2047)</span><input type="number" id="c-wb" value="0" min="0" max="2047"></div>
               <div class="f"><span>min_dynamic_shared_memory (MB)</span><input type="number" id="c-dsm" value="0" min="0" max="65536"></div>
               <div class="f"><span>transaction_buffers (8 kB blocks, 0 = auto)</span><input type="number" id="c-tb" value="0" min="0" max="131072"></div>
+              <div class="f"><span>pg_stat_statements.max (0 = not preloaded)</span><input type="number" id="c-pgss" value="5000" min="0" max="1073741823"></div>
               <div class="f" id="f-io" style="display:none"><span id="lbl-io">io_max_concurrency — I/Os per backend (-1 = auto, manual 1…1024)</span><input type="number" id="c-io" value="-1" min="-1" max="1024"></div>
             </div>
           </details>
@@ -307,7 +308,7 @@ details[open]>summary{color:var(--huge)}
   <div class="wrap">
     <div class="snum">THE CHECK</div>
     <h2>Calculator versus <span class="tint">postgres -C</span></h2>
-    <p class="sub">Ten configurations run through the server itself on PostgreSQL 17, sweeping the full range the sliders allow — <code>shared_buffers</code> from 8 GB to 1 TB, <code>max_connections</code> from 100 to 10 000, <code>max_locks_per_transaction</code> from 64 to 256 — then the same input put through the calculator. Every other setting stays at its default. The command is the one from the top of the page, and it needs no memory: it computes the number and exits.</p>
+    <p class="sub">Twelve configurations run through the server itself on PostgreSQL 17, sweeping the full range the sliders allow — <code>shared_buffers</code> from 8 GB to 1 TB, <code>max_connections</code> from 100 to 10 000, <code>max_locks_per_transaction</code> from 64 to 256 — then the same input put through the calculator. Two of them also load <code>pg_stat_statements</code> through <code>shared_preload_libraries</code>; everything else stays at its default. The command is the one from the top of the page, and it needs no memory: it computes the number and exits.</p>
 
     <p class="sub">What is compared is the <b>requirement</b> — the big number in the calculator, <code>shared_memory_size_in_huge_pages</code>. The margin slider is deliberately left out of it: <code>postgres -C</code> reports what the server needs, while the <code>vm.nr_hugepages</code> line is that number plus whatever slack you choose to add on top.</p>
 
@@ -325,8 +326,10 @@ details[open]>summary{color:var(--huge)}
       <tr><td class="mono">shared_buffers 32 GB · max_connections 100 · locks 64</td><td class="num">16&thinsp;784</td><td class="num">16&thinsp;788</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 32 GB · max_connections 1&thinsp;000 · locks 128</td><td class="num">16&thinsp;817</td><td class="num">16&thinsp;821</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 32 GB · max_connections 10&thinsp;000 · locks 256</td><td class="num">17&thinsp;392</td><td class="num">17&thinsp;396</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 32 GB · max_connections 300 · pg_stat_statements max 5000</td><td class="num">16&thinsp;790</td><td class="num">16&thinsp;794</td><td class="num">−0.02&thinsp;%</td><td class="num">−8&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 128 GB · max_connections 500 · locks 64</td><td class="num">67&thinsp;063</td><td class="num">66&thinsp;975</td><td class="num">+0.13&thinsp;%</td><td class="num">+176&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 128 GB · max_connections 5&thinsp;000 · locks 256</td><td class="num">67&thinsp;356</td><td class="num">67&thinsp;268</td><td class="num">+0.13&thinsp;%</td><td class="num">+176&thinsp;MB</td></tr>
+      <tr><td class="mono">shared_buffers 128 GB · max_connections 1&thinsp;000 · pg_stat_statements max 10&thinsp;000</td><td class="num">67&thinsp;075</td><td class="num">66&thinsp;988</td><td class="num">+0.13&thinsp;%</td><td class="num">+174&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 512 GB · max_connections 1&thinsp;000 · locks 128</td><td class="num">268&thinsp;159</td><td class="num">267&thinsp;352</td><td class="num">+0.30&thinsp;%</td><td class="num">+1&thinsp;614&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 1 TB · max_connections 100 · locks 64</td><td class="num">536&thinsp;224</td><td class="num">534&thinsp;457</td><td class="num">+0.33&thinsp;%</td><td class="num">+3&thinsp;534&thinsp;MB</td></tr>
       <tr><td class="mono">shared_buffers 1 TB · max_connections 10&thinsp;000 · locks 256</td><td class="num">536&thinsp;832</td><td class="num">535&thinsp;065</td><td class="num">+0.33&thinsp;%</td><td class="num">+3&thinsp;534&thinsp;MB</td></tr>
@@ -417,6 +420,10 @@ function calc(c){
     conc=c.io>0?c.io:Math.min(64,Math.max(1,Math.floor(nb/slots)));
     p.aio=slots*conc*K.aio;
   }
+  /* pg_stat_statements: pgss_memsize() — a hash of pg_stat_statements.max entries.
+     Query texts live in an external file since PG 14, so only the entries are here.  */
+  p.ext=c.pgss>0?hes(c.pgss,404)+4096:0;
+
   p.dsm=c.dsm;
   p.other=K.base;
 
@@ -443,6 +450,8 @@ var ROWS=[
    'pg_shmem_allocations:\nXLOG Ctl\n\nsource:\nXLOGShmemSize()'],
   ['aio',     'AIO handles (PG 18)',                         '#c48bff',
    'pg_shmem_allocations:\nAioHandle\nAioHandleIOV\nAioHandleData\nAioBackend\n\nsource:\nAioShmemSize(). Allocated whatever io_method is set to — sync costs exactly as much as worker'],
+  ['ext',     'pg_stat_statements',                          '#e58fbb',
+   'pg_shmem_allocations:\npg_stat_statements\npg_stat_statements hash\n(its entries are unnamed before PG 18)\n\nsource:\npgss_memsize() — a hash of pg_stat_statements.max entries, ~404 B each'],
   ['dsm',     'min_dynamic_shared_memory',                   '#7f8dc4',
    'pg_shmem_allocations:\nunnamed — it is the DSM area carved out of the segment\n\nsource:\ndsm_estimate_size()'],
   ['other',   'fixed structures and slop',                   '#4b5680',
@@ -476,7 +485,7 @@ function readCfg(){
     avw:Math.max(1,+$('c-avw').value||3), avs:Math.max(1,+$('c-avs').value||16),
     mpt:+$('c-mpt').value||0, tq:Math.max(100,+$('c-tq').value||1024),
     wb:+$('c-wb').value||0, dsm:(+$('c-dsm').value||0)*1048576,
-    tb:+$('c-tb').value||0, io:($('c-io').value===''?-1:+$('c-io').value),
+    tb:+$('c-tb').value||0, pgss:+$('c-pgss').value||0, io:($('c-io').value===''?-1:+$('c-io').value),
     margin:+$('c-mg').value, sbMB:sbMB
   };
 }
@@ -553,7 +562,7 @@ function upd(){
   $('o-warn').innerHTML='<span class="tag">'+tag+'</span>'+msg;
 }
 
-['c-sb','c-mc','c-lk','c-mg','c-mwp','c-mws','c-avw','c-avs','c-mpt','c-pl','c-tq','c-wb','c-dsm','c-tb','c-io']
+['c-sb','c-mc','c-lk','c-mg','c-mwp','c-mws','c-avw','c-avs','c-mpt','c-pl','c-tq','c-wb','c-dsm','c-tb','c-io','c-pgss']
   .forEach(function(id){var e=$(id);if(e){e.addEventListener('input',upd);e.addEventListener('change',upd);}});
 
 Array.prototype.forEach.call($('ver').querySelectorAll('button'),function(b){
