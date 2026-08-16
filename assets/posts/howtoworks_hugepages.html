@@ -236,7 +236,7 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
 <span class="h">per proc:  31.0 MB</span></pre>
     </div>
 
-    <div class="note info"><b>Ceiling and reality are not the same thing.</b> 64 MB per backend is the <i>ceiling</i>. That is what a backend costs after it has read all 32 GB. A page table only creates entries for pages the process has really touched, so a real backend stays below that number. Two things decide how far below: <b>how long the backend has been running</b> and <b>how much of the pool its queries reach</b>. Time matters more. A backend that only reads a few small tables does stay cheap, but that is rare. Most workloads touch enough of <code>shared_buffers</code> that after a few days the backend gets close to the ceiling anyway. The server above is real: 602 processes at 31 MB each, about half the ceiling, and still <b>18.2 GB of RAM used to describe memory the server already owns</b>. Every number on this page is a ceiling. Your own number will be lower, and that is the number that decides if this work is worth it.</div>
+    <div class="note info"><b>Ceiling and reality are not the same thing.</b> 64 MB per backend is the <i>ceiling</i>. That is what a backend costs after it has read all 32 GB. A page table only creates entries for pages the process has really touched, so a real backend stays below that number. Two things decide how far below: <b>how long the backend has been running</b> and <b>how much of the pool its queries reach</b>. Time matters more. Most workloads touch enough of <code>shared_buffers</code> that after a few days the backend gets close to the ceiling anyway. The server above is real: 602 processes at 31 MB each, about half the ceiling, and still <b>18.2 GB of RAM used to describe memory the server already owns</b>. Every number on this page is a ceiling. Your own number will be lower, and that is the number that decides if this work is worth it.</div>
   </div>
 </section>
 
@@ -371,7 +371,7 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
       <div class="narr" id="ex-narr"></div>
     </div>
 
-    <div class="note"><b>Real systems stay below this ceiling.</b> The explorer assumes that every backend has read the whole pool. In practice a backend only creates entries for the pages it has really touched, so its page table grows with everything it has read <i>since it started</i>. The main factor is time. A backend that does not live long stays small. One that has been open for days gets close to the ceiling. The only real exception is a backend that always queries the same few small tables — that one stays cheap however long it runs. So read this chart as an upper limit, and take your real numbers from the <code>VmPTE</code> command in section 01.</div>
+    <div class="note"><b>Real systems stay below this ceiling.</b> The explorer assumes that every backend has read the whole pool. In practice a backend only creates entries for the pages it has really touched, so its page table grows with everything it has read <i>since it started</i>. The main factor is time. A backend that does not live long stays small. One that has been open for days gets close to the ceiling. So read this chart as an upper limit, and take your real numbers from the <code>VmPTE</code> command in section 01.</div>
   </div>
 </section>
 
@@ -412,7 +412,7 @@ input[type=range]{width:100%;accent-color:var(--pt);background:transparent}
     </table>
     </div>
 
-    <div class="note good"><b>What you get, in order of importance.</b> First, <b>several gigabytes of RAM come back</b>. The page cache can use them, or you can give them to a larger <code>shared_buffers</code>. Second, CPU usage usually drops by <b>5–20%</b>, because the TLB hits more often and the faults stop happening. The RAM is the safe win. The CPU is a bonus, and it depends a lot on how random your access pattern is.</div>
+    <div class="note good"><b>What you get, in order of importance.</b> First, <b>several gigabytes of RAM come back</b>. The page cache can use them, or you can give them to a larger <code>shared_buffers</code>. Second, CPU usage usually drops by <b>4–10%</b>, and that part comes from the TLB alone: it now covers a useful share of the working set instead of missing constantly. Note that this figure is measured with the freed memory still unused — whatever you gain by spending it on a bigger pool or on the OS cache comes on top of it.</div>
 
     <div class="note"><b>Explicit, not transparent.</b> Transparent Huge Pages are a different mechanism. The kernel only tries: it gives you huge pages when it can, and it may take them back later. With some settings, the work of building them can also cause latency spikes. An explicit hugetlb reservation is a guarantee. THP is only a chance, so one cannot replace the other. The post covers the settings, the sizing, and the ways a reservation can fail without telling you: <a href="/2026/08/08/postgresql-huge-pages.html">PostgreSQL configuration →</a></div>
   </div>

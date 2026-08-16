@@ -45,7 +45,7 @@ With 2 MB huge pages the same 32 GB needs 16,384 entries — roughly **128 KB pe
 
 > 🧠 **From production.** With `shared_buffers = 32GB` and 300–600 backends, total page-table memory typically lands in the **10–20 GB** range, well below the ceiling above. With 2 MB pages that same fleet needs **75 MB total at 600 backends**.
 >
-> CPU usage drops by roughly **5–20%** — better TLB hit rates, and fewer page faults as a result. But the bigger win is simpler than that: **several gigabytes of RAM come back.** The OS can use them for its cache, or you can spend them on a larger `shared_buffers`.
+> CPU usage drops by roughly **4–10%**, and it comes from one place: address translation. The TLB now covers a useful share of the working set instead of missing constantly. Note what that number does *not* contain — in these measurements the freed memory was handed to nobody (no OS page cache in play either — that server stores its data on ZFS, so caching happens in the ARC). It simply sat unused. **Several gigabytes of RAM come back**, and everything they could buy — a larger `shared_buffers`, more room for the OS cache or the ZFS ARC — is still ahead of you, on top of the 4–10%.
 >
 > The effect is biggest while `shared_buffers` is still **empty and filling up**, because then every access is a first touch. A [change in Linux 7.0](https://read.thecoder.cafe/p/linux-broke-postgresql) showed this clearly in 2026: on a server with a very large `shared_buffers` and huge pages off, PostgreSQL became about two times slower. The fuel was first-touch faults on an empty pool; a scheduler change made it possible to preempt a backend in the middle of one while it held a buffer-allocation spinlock, and every other backend spun waiting for it. Huge pages removed the faults, and the regression went away.
 >
@@ -253,7 +253,7 @@ Huge pages are a narrow optimisation with a clear mechanism. They do not make Po
 
 ## Notes
 
-[^scaling]: The ceiling assumes every backend has read all of `shared_buffers`; 64 MB is the figure for a fully warmed one. A backend only allocates entries for pages it has actually touched, so its table grows with what it has read over its whole lifetime. The longer it lives the closer it drifts to the ceiling — unless it only ever queries a couple of small tables, in which case it stays cheap no matter how long it runs.
+[^scaling]: The ceiling assumes every backend has read all of `shared_buffers`; 64 MB is the figure for a fully warmed one. A backend only allocates entries for pages it has actually touched, so its table grows with what it has read over its whole lifetime. The longer it lives, the closer it drifts to the ceiling.
 
 
 [^try]: With `try`, PostgreSQL asks for `MAP_HUGETLB` and, if that fails, silently retries the mapping without it. The server starts, looks healthy, and runs on 4 KB pages. The common ways to end up there: `vm.nr_hugepages` never set; set but too small after `shared_buffers` grew; or set with `sysctl -w` and never persisted to `/etc/sysctl.conf`, so it vanished at the last reboot.
