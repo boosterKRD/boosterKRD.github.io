@@ -84,6 +84,7 @@ Then decide:
 
 - **A few hundred MB**: huge pages are not your problem. Spend your effort elsewhere.
 - **Several GB**: you are paying a permanent memory tax to describe memory you already own, so a migration is worth the work. That RAM returns to the page cache and the rest of the system, which helps regardless of your workload. An I/O-bound server may be I/O-bound precisely because those gigabytes went into page tables instead of caching data.
+
 ---
 
 ## 3. How it works under the hood
@@ -219,13 +220,14 @@ To make it permanent, add `transparent_hugepage=never` to the kernel command lin
 
 ## 5. Aside: a pooler may be enough
 
-> ℹ️ Everything below assumes a pooler in transaction mode.
-
-> ℹ️ **An aside, not part of the rollout above.** Page table memory grows for two reasons: the number of backends you run and the size of the pages. Huge pages address the second. A pooler addresses the first, with no reboot, kernel tuning, or reserved memory. Neither replaces the other. A pooler cannot make a page table smaller, and huge pages cannot stop your application from opening 600 connections.
+> ℹ️ Notes
+>
+> - Everything below assumes a pooler in transaction mode.
+> - **An aside, not part of the rollout above.** Page table memory grows for two reasons: the number of backends you run and the size of the pages. Huge pages address the second. A pooler addresses the first, with no reboot, kernel tuning, or reserved memory. Neither replaces the other. A pooler cannot make a page table smaller, and huge pages cannot stop your application from opening 600 connections.
 
 **`pool_size` caps the number of backends**. 500 clients through a pool of 30 create 30 backends, not 500. With 32 GB of `shared_buffers`, that is roughly 1.9 GB of page tables instead of 31 GB. Growth depends on the pool size, not on how many connections your application opens.
 
-**Backends stay hot.** Server connections are reused much more often, so each backend’s working set stays warm and its translations remain resident. A server connection lives separately from the client connection that used it, so an application that constantly opens and closes connections does not pay for a new first touch every time. The same helps after a database restart: if the pool uses the most recently used connection first, only a few backends need to warm up.[^lifo]
+**Backends stay hot.** Server connections are reused much more often, so each backend’s working set stays warm and its translations remain resident. A server connection lives separately from the client connection that used it, so an application that constantly opens and closes connections does not pay for a new first touch every time. The same helps after a database restart: if the pool uses the most recently used connection first, only a few backends need to warm up.
 
 **Recycling removes bloated backends.** Poolers can close server connections after a set lifetime, and the backend with its large page table disappears with the connection. This works regardless of application behaviour, which matters for legacy clients that never close connections.[^recycle]
 
@@ -261,7 +263,5 @@ Huge pages are a narrow optimisation with a clear mechanism. They do not make Po
 [^status]: `huge_pages_status` was added in PostgreSQL 17 because `try` gave no way to confirm the result. A running instance reports either `on` or `off`. The third value, `unknown`, means the status could not be determined. You see it when reading the parameter with `postgres -C` against a stopped server, because nothing has been allocated yet.
 
 [^recycle]: Recycling removes warm page tables along with bloated ones. If the lifetime is too short, you get a steady stream of re-faults, fork costs, and a cold catalog cache for every new backend. This is a trade-off between steady-state table size and fault frequency, not a free win. Most poolers also offer an idle-based equivalent. It does the same thing based on idleness rather than age and is usually the cheaper option. In PgBouncer, these are [`server_lifetime` and `server_idle_timeout`](https://www.pgbouncer.org/config.html); other poolers use different names for the same two ideas.
-
-[^lifo]: Pool documentation is inconsistent about these names. Stack-like behaviour keeps backends cold by reusing the most recently used connection first. It is often called **LIFO** or **MRU**. Queue-like behaviour, usually called **FIFO** or round-robin, warms every backend. Check what your driver actually does instead of trusting the acronym. You can confirm it by comparing `VmPTE` across backends: an even spread means they are all hot, while a wide spread means only some of them are.
 
 [^local]: `work_mem`, `maintenance_work_mem`, and catalog and plan caches still use 4 KB pages. Huge pages apply only to the shared memory segment.
