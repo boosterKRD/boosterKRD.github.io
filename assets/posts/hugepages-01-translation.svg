@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" font-family="Menlo,Consolas,'DejaVu Sans Mono',monospace" role="img">
+<rect x="0" y="0" width="760" height="300" fill="#1a1a1a" rx="8"/>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a6"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5e853"/></marker>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e57373"/></marker>
+</defs>
+<text x="380.0" y="32" fill="#b5e853" font-size="16" text-anchor="middle" font-weight="bold">Address translation</text>
+<rect x="30" y="70" width="150" height="52" fill="#242424" stroke="#3a3a3a" stroke-width="1.5" rx="6"/>
+<text x="105.0" y="92.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">virtual</text>
+<text x="105.0" y="109.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">address</text>
+<path d="M180,96 L240,96" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<rect x="240" y="70" width="120" height="52" fill="#242424" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="300.0" y="100.68" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">TLB</text>
+<path d="M360,96 L430,96" stroke="#b5e853" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
+<text x="395" y="86" fill="#b5e853" font-size="12" text-anchor="middle" font-weight="normal">hit</text>
+<rect x="430" y="70" width="160" height="52" fill="#242424" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="510.0" y="92.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">physical</text>
+<text x="510.0" y="109.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">address</text>
+<text x="300" y="148" fill="#e57373" font-size="12" text-anchor="middle" font-weight="normal">miss</text>
+<path d="M300,122 L300,180" stroke="#e57373" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="215" y="190" width="170" height="56" fill="#2b1c1c" stroke="#e57373" stroke-width="1.5" rx="6"/>
+<text x="300.0" y="214.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">page walk</text>
+<text x="300.0" y="231.18" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">(4 memory reads)</text>
+<path d="M385,218 L445,218" stroke="#e57373" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<rect x="445" y="190" width="90" height="56" fill="#2b1c1c" stroke="#e57373" stroke-width="1.5" rx="6"/>
+<text x="490.0" y="222.68" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">PTE</text>
+<path d="M535,218 L590,218" stroke="#e57373" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<path d="M590,218 L620,218 L620,96 L595,96" stroke="#e57373" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<text x="380.0" y="285" fill="#9aa0a6" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic">the highlighted branch is what huge pages eliminate</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 400" width="820" height="400" font-family="Menlo,Consolas,'DejaVu Sans Mono',monospace" role="img">
+<rect x="0" y="0" width="820" height="400" fill="#1a1a1a" rx="8"/>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa0a6"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5e853"/></marker>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e57373"/></marker>
+</defs>
+<text x="410.0" y="32" fill="#b5e853" font-size="16" text-anchor="middle" font-weight="bold">One physical region, three private page tables</text>
+<rect x="60" y="60" width="180" height="44" fill="#242424" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="150.0" y="86.68" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">backend 1</text>
+<path d="M150,104 L150,134" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<rect x="60" y="134" width="180" height="52" fill="#242424" stroke="#3a3a3a" stroke-width="1.5" rx="6"/>
+<text x="150.0" y="156.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">page table</text>
+<text x="150.0" y="173.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">~32 MB</text>
+<rect x="320" y="60" width="180" height="44" fill="#242424" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="410.0" y="86.68" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">backend 2</text>
+<path d="M410,104 L410,134" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<rect x="320" y="134" width="180" height="52" fill="#242424" stroke="#3a3a3a" stroke-width="1.5" rx="6"/>
+<text x="410.0" y="156.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">page table</text>
+<text x="410.0" y="173.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">~32 MB</text>
+<rect x="580" y="60" width="180" height="44" fill="#242424" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="670.0" y="86.68" fill="#ffffff" font-size="13" text-anchor="middle" font-weight="normal">backend 3</text>
+<path d="M670,104 L670,134" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<rect x="580" y="134" width="180" height="52" fill="#242424" stroke="#3a3a3a" stroke-width="1.5" rx="6"/>
+<text x="670.0" y="156.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">page table</text>
+<text x="670.0" y="173.18" fill="#ffb74d" font-size="13" text-anchor="middle" font-weight="normal">~32 MB</text>
+<path d="M150,186 L150,228 L410,228 L410,262" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M410,186 L410,228 L410,228 L410,262" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M670,186 L670,228 L410,228 L410,262" stroke="#9aa0a6" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<rect x="160" y="262" width="500" height="62" fill="#1e2a12" stroke="#b5e853" stroke-width="1.5" rx="6"/>
+<text x="410.0" y="298.04" fill="#b5e853" font-size="14" text-anchor="middle" font-weight="normal">shared_buffers — 16 GB (one physical copy)</text>
+<text x="410.0" y="356" fill="#9aa0a6" font-size="13" text-anchor="middle" font-weight="normal">backend 2 touches the same physical page as backend 1</text>
+<text x="410.0" y="376" fill="#e57373" font-size="13" text-anchor="middle" font-weight="normal">and still takes a minor fault — its own table is empty there</text>
+</svg>

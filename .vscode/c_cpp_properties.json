@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/Users/maratbogatyrev/Documents/repo/BoosterKRD/postgres/src/include", // Include PostgreSQL headers
+                "/Users/maratbogatyrev/Documents/repo/BoosterKRD/postgres/src/interfaces/libpq", // Include libpq headers
+                // Add any other necessary paths here
+            ],
+            "defines": [],
+            "macFrameworkPath": [],
+            "compilerPath": "/usr/bin/clang", // Ensure this points to your compiler
+            "cStandard": "c11", // Use appropriate C standard
+            "cppStandard": "c++14",
+            "intelliSenseMode": "macos-clang-x64"
+        }
+    ],
+    "version": 4
+}

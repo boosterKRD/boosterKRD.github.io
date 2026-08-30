@@ -1,0 +1,13 @@
+FROM golang:1.23-alpine
+
+RUN apk add --no-cache strace postgresql-client
+
+WORKDIR /test
+
+COPY go_pgx/ /test/go_pgx/
+COPY go_pq/ /test/go_pq/
+COPY run_tests_linux.sh /test/
+
+RUN chmod +x /test/run_tests_linux.sh
+
+CMD ["/test/run_tests_linux.sh"]

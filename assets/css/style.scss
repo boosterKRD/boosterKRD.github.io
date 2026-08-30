@@ -1,0 +1,42 @@
+---
+---
+
+@import 'jekyll-theme-hacker';
+
+.container {
+  width: 90%;
+  max-width: none;
+  margin: 0 auto;
+}
+
+.gallery {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.gallery-item {
+  margin: 10px;
+}
+
+.gallery-item img {
+  max-width: 300px;
+  height: auto;
+}
+
+.albums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.album {
+  text-align: center;
+  width: 200px;
+}
+
+.album img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 10px;
+}
